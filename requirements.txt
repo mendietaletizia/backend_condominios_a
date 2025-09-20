@@ -1,0 +1,13 @@
+Django>=5.0,<6.0
+djangorestframework
+psycopg2-binary
+python-decouple
+"""
+    Django: framework principal
+
+    djangorestframework: para los serializers y APIs
+
+    psycopg2-binary: conector PostgreSQL
+
+    python-decouple: para manejar variables en .env
+"""
