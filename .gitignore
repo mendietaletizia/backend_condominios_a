@@ -1,0 +1,16 @@
+# Entorno virtual
+env/
+venv/
+
+# Cachés de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos temporales y del sistema
+*.log
+*.sqlite3
+.DS_Store
+
+# Archivos de configuración locales
+*.env
