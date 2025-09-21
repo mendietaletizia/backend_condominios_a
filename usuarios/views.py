@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions
 from usuarios.models import (
     Usuario, Persona, Roles, Permiso, RolPermiso, Empleado,
-    Vehiculo, AccesoVehicular, Visita, Invitado, Reclamo
+    Vehiculo, AccesoVehicular, Visita, Invitado, Reclamo, Residentes
 )
 from usuarios.serializers.usuarios_serializer import (
     UsuarioSerializer, PersonaSerializer, RolesSerializer,

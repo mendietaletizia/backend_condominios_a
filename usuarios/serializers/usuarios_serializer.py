@@ -6,14 +6,31 @@ from usuarios.models import (
 from django.contrib.auth.hashers import make_password
 
 class UsuarioSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    rol = serializers.SerializerMethodField()
 
     class Meta:
         model = Usuario
-        fields = ['id', 'username', 'email', 'password', 'first_name', 'last_name', 'is_active']
+        fields = ['id', 'username', 'email', 'password', 'first_name', 'last_name', 'is_active', 'rol']
         extra_kwargs = {
-            'password': {'write_only': True}
+            'password': {'write_only': True, 'required': False}
         }
+
+    def get_rol(self, obj):
+        """Determinar el rol del usuario basado en si es empleado o residente"""
+        from usuarios.models import Empleado, Residentes
+        
+        # Verificar si es empleado
+        empleado = Empleado.objects.filter(usuario=obj).first()
+        if empleado:
+            return empleado.cargo
+        
+        # Verificar si es residente
+        residente = Residentes.objects.filter(persona__email=obj.email).first()
+        if residente:
+            return "Residente"
+        
+        return "Usuario"
 
     def create(self, validated_data):
         password = validated_data.pop('password')
@@ -21,9 +38,12 @@ class UsuarioSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
-        if 'password' in validated_data:
+        if 'password' in validated_data and validated_data['password']:
             password = validated_data.pop('password')
             instance.set_password(password)
+        elif 'password' in validated_data:
+            # Si se envía una contraseña vacía, la removemos
+            validated_data.pop('password')
         return super().update(instance, validated_data)
 
 

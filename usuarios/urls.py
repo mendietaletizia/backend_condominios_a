@@ -8,11 +8,11 @@ from usuarios.views import (
 )
 
 router = DefaultRouter()
-router.register(r'usuarios', UsuarioViewSet)
-router.register(r'personas', PersonaViewSet)
+router.register(r'usuario', UsuarioViewSet)  # Changed from 'usuarios' to 'usuario' to match frontend
+router.register(r'persona', PersonaViewSet)  # Changed from 'personas' to 'persona' to match frontend
 router.register(r'roles', RolesViewSet)
-router.register(r'permisos', PermisoViewSet)
-router.register(r'rol-permisos', RolPermisoViewSet)
+router.register(r'permiso', PermisoViewSet)  # Changed from 'permisos' to 'permiso' to match frontend
+router.register(r'rol-permiso', RolPermisoViewSet)  # Changed from 'rol-permisos' to 'rol-permiso' to match frontend
 router.register(r'empleados', EmpleadoViewSet)
 router.register(r'vehiculos', VehiculoViewSet)
 router.register(r'accesos-vehiculares', AccesoVehicularViewSet)
