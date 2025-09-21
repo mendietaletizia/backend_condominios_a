@@ -12,10 +12,9 @@ class RolPermiso(permissions.BasePermission):
     Otros roles solo pueden ver (GET).
     """
     def has_permission(self, request, view):
-        user = getattr(request.user, 'usuario', None)
-        if not user:
+        if not request.user or not request.user.is_authenticated:
             return False
-        empleado = Empleado.objects.filter(usuario=user).first()
+        empleado = Empleado.objects.filter(usuario=request.user).first()
         if empleado and empleado.cargo.lower() == "administrador":
             return True
         # Solo permitir GET para otros roles
@@ -30,3 +29,16 @@ class PagoViewSet(viewsets.ModelViewSet):
     queryset = Pago.objects.all()
     serializer_class = PagoSerializer
     permission_classes = [RolPermiso]
+    
+    def get_queryset(self):
+        if not self.request.user or not self.request.user.is_authenticated:
+            return Pago.objects.none()
+        empleado = Empleado.objects.filter(usuario=self.request.user).first()
+        if empleado and empleado.cargo.lower() == "administrador":
+            return Pago.objects.all()
+        # Residentes solo ven sus propios pagos
+        from usuarios.models import Residentes
+        residente = Residentes.objects.filter(usuario=self.request.user).first()
+        if residente:
+            return Pago.objects.filter(residente=residente)
+        return Pago.objects.none()

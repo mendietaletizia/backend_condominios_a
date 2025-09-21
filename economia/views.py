@@ -8,17 +8,16 @@ from economia.models import Gastos, Multa
 from finanzas.models import Pago, Expensa
 from economia.serializers.economia_serializer import GastosSerializer, MultaSerializer, PagoSerializer, ExpensaSerializer
 from usuarios.models import Empleado
-from django.db.models import Sum
+from django.db.models import Sum, Count
 
 class RolPermiso(permissions.BasePermission):
     """
     Solo administradores pueden crear/editar. Otros roles solo GET.
     """
     def has_permission(self, request, view):
-        user = getattr(request.user, 'usuario', None)
-        if not user:
+        if not request.user or not request.user.is_authenticated:
             return False
-        empleado = Empleado.objects.filter(usuario=user).first()
+        empleado = Empleado.objects.filter(usuario=request.user).first()
         if empleado and empleado.cargo.lower() == "administrador":
             return True
         return request.method in permissions.SAFE_METHODS
@@ -63,11 +62,51 @@ class MorosidadViewSet(viewsets.ViewSet):
         Simple aproximación: si fecha_vencimiento < hoy y estado pago pendiente
         """
         import datetime
+        from django.db.models import Sum, Count
+        from usuarios.models import Residentes
+        
         hoy = datetime.date.today()
-        morosidad = {}
-        pagos = Pago.objects.all()
-        for pago in pagos:
-            if pago.fecha_vencimiento < hoy and pago.monto > 0:
-                r_id = pago.residente.id
-                morosidad[r_id] = morosidad.get(r_id, 0) + pago.monto
-        return Response(morosidad)
+        
+        # Obtener residentes con pagos vencidos
+        residentes_morosos = Residentes.objects.filter(
+            pago__fecha_vencimiento__lt=hoy,
+            pago__estado_pago='pendiente'
+        ).annotate(
+            total_moroso=Sum('pago__monto'),
+            cantidad_pagos_vencidos=Count('pago')
+        ).values('id', 'persona__nombre', 'total_moroso', 'cantidad_pagos_vencidos')
+        
+        # Calcular estadísticas generales
+        total_morosidad = sum(r['total_moroso'] or 0 for r in residentes_morosos)
+        cantidad_morosos = len(residentes_morosos)
+        
+        return Response({
+            'residentes_morosos': list(residentes_morosos),
+            'estadisticas': {
+                'total_morosidad': total_morosidad,
+                'cantidad_morosos': cantidad_morosos,
+                'fecha_analisis': hoy
+            }
+        })
+    
+    @action(detail=False, methods=['get'])
+    def tendencias_pagos(self, request):
+        """Análisis de tendencias de pagos por mes"""
+        from django.db.models import Sum
+        from django.db.models.functions import TruncMonth
+        import datetime
+        
+        # Pagos por mes del último año
+        pagos_por_mes = Pago.objects.filter(
+            fecha_pago__gte=datetime.date.today() - datetime.timedelta(days=365)
+        ).annotate(
+            mes=TruncMonth('fecha_pago')
+        ).values('mes').annotate(
+            total=Sum('monto'),
+            cantidad=Count('id')
+        ).order_by('mes')
+        
+        return Response({
+            'tendencias_mensuales': list(pagos_por_mes),
+            'periodo_analisis': 'Últimos 12 meses'
+        })

@@ -17,12 +17,22 @@ class Unidad(models.Model):
         return f"Unidad {self.numero_casa}"
 
 class ResidentesUnidad(models.Model):
+    TIPO_RESIDENTE_CHOICES = [
+        ('propietario', 'Propietario'),
+        ('inquilino', 'Inquilino'),
+        ('familiar', 'Familiar'),
+    ]
+    
     id = models.AutoField(primary_key=True)
     id_residente = models.ForeignKey(Residentes, on_delete=models.CASCADE)
     id_unidad = models.ForeignKey(Unidad, on_delete=models.CASCADE)
+    rol_en_unidad = models.CharField(max_length=20, choices=TIPO_RESIDENTE_CHOICES, default='propietario')
     fecha_inicio = models.DateField()
     fecha_fin = models.DateField(null=True, blank=True)
     estado = models.BooleanField(default=True)
+    
+    class Meta:
+        unique_together = ['id_residente', 'id_unidad', 'fecha_inicio']
 
 # CU11: Eventos
 class Evento(models.Model):

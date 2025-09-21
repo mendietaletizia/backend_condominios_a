@@ -1,19 +1,22 @@
 from rest_framework import serializers
 from usuarios.models import Usuario
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth import authenticate
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
 
     def validate(self, data):
-        try:
-            user = Usuario.objects.get(username=data['username'])
-        except Usuario.DoesNotExist:
-            raise serializers.ValidationError("Usuario no existe")
+        username = data.get('username')
+        password = data.get('password')
 
-        if not check_password(data['password'], user.password):
-            raise serializers.ValidationError("Contraseña incorrecta")
-        
-        data['user'] = user
-        return data
+        if username and password:
+            user = authenticate(username=username, password=password)
+            if not user:
+                raise serializers.ValidationError("Credenciales inválidas")
+            if not user.is_active:
+                raise serializers.ValidationError("Usuario inactivo")
+            data['user'] = user
+            return data
+        else:
+            raise serializers.ValidationError("Debe proporcionar username y password")

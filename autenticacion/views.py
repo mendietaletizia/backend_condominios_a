@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status, permissions
 from autenticacion.serializers import LoginSerializer
 from rest_framework.authtoken.models import Token
-from usuarios.models import Empleado
+from usuarios.models import Empleado, Residentes
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -15,13 +15,21 @@ class LoginView(APIView):
 
         token, _ = Token.objects.get_or_create(user=user)
 
+        # Determinar el rol del usuario
         empleado = Empleado.objects.filter(usuario=user).first()
-        rol = empleado.cargo if empleado else "Residente"
+        if empleado:
+            rol = empleado.cargo
+        else:
+            # Verificar si es residente
+            residente = Residentes.objects.filter(persona__email=user.email).first()
+            rol = "Residente" if residente else "Usuario"
 
         return Response({
             "token": token.key,
             "username": user.username,
-            "rol": rol
+            "email": user.email,
+            "rol": rol,
+            "user_id": user.id
         })
 
 
@@ -30,5 +38,6 @@ class LogoutView(APIView):
 
     def post(self, request):
         # Borrar token para cerrar sesión
-        request.auth.delete()
+        if hasattr(request, 'auth') and request.auth:
+            request.auth.delete()
         return Response({"detail": "Sesión cerrada"}, status=status.HTTP_200_OK)
