@@ -17,6 +17,21 @@ class RolPermiso(permissions.BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
+        # Permitir si es superusuario o tiene rol de administrador
+        if getattr(request.user, "is_superuser", False):
+            return True
+        if hasattr(request.user, "rol") and request.user.rol and request.user.rol.nombre.lower() == "administrador":
+            return True
+        # Lógica para otros roles
+        if hasattr(request.user, "rol") and request.user.rol:
+            rol = request.user.rol.nombre.lower()
+            if rol == "residente":
+                # Solo lectura para residentes
+                return request.method in permissions.SAFE_METHODS
+            if rol == "empleado":
+                # Personaliza aquí los permisos de empleado si lo necesitas
+                return request.method in permissions.SAFE_METHODS
+        # Lógica anterior para empleados (por compatibilidad)
         empleado = Empleado.objects.filter(usuario=request.user).first()
         if empleado and empleado.cargo.lower() == "administrador":
             return True

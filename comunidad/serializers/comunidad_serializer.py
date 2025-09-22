@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta
+from usuarios.models import Residentes, Usuario
 
 class UnidadSerializer(serializers.ModelSerializer):
     class Meta:
@@ -7,6 +8,8 @@ class UnidadSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class ResidentesUnidadSerializer(serializers.ModelSerializer):
+    id_residente = serializers.PrimaryKeyRelatedField(queryset=Residentes.objects.all())
+    id_unidad = serializers.PrimaryKeyRelatedField(queryset=Unidad.objects.all())
     class Meta:
         model = ResidentesUnidad
         fields = '__all__'

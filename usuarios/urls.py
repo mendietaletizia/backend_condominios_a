@@ -1,15 +1,17 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from usuarios.views import (
-    UsuarioViewSet, PersonaViewSet, RolesViewSet,
+    UsuarioViewSet, PersonaViewSet, ResidentesViewSet, RolesViewSet,
     PermisoViewSet, RolPermisoViewSet, EmpleadoViewSet,
     VehiculoViewSet, AccesoVehicularViewSet, VisitaViewSet,
     InvitadoViewSet, ReclamoViewSet
 )
 
 router = DefaultRouter()
+
 router.register(r'usuario', UsuarioViewSet)  # Changed from 'usuarios' to 'usuario' to match frontend
 router.register(r'persona', PersonaViewSet)  # Changed from 'personas' to 'persona' to match frontend
+router.register(r'residentes', ResidentesViewSet)  # <-- NUEVO ENDPOINT
 router.register(r'roles', RolesViewSet)
 router.register(r'permiso', PermisoViewSet)  # Changed from 'permisos' to 'permiso' to match frontend
 router.register(r'rol-permiso', RolPermisoViewSet)  # Changed from 'rol-permisos' to 'rol-permiso' to match frontend

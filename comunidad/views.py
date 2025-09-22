@@ -32,7 +32,7 @@ class UnidadViewSet(viewsets.ModelViewSet):
 class ResidentesUnidadViewSet(viewsets.ModelViewSet):
     queryset = ResidentesUnidad.objects.all()
     serializer_class = ResidentesUnidadSerializer
-    permission_classes = [RolPermiso]
+    permission_classes = [permissions.IsAuthenticated]
 
 # CU11: Eventos
 class EventoViewSet(viewsets.ModelViewSet):

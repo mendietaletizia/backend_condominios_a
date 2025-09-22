@@ -15,14 +15,17 @@ class LoginView(APIView):
 
         token, _ = Token.objects.get_or_create(user=user)
 
-        # Determinar el rol del usuario
-        empleado = Empleado.objects.filter(usuario=user).first()
-        if empleado:
-            rol = empleado.cargo
+        # Determinar el rol del usuario usando el campo rol del modelo Usuario
+        if hasattr(user, 'rol') and user.rol:
+            rol = user.rol.nombre
         else:
-            # Verificar si es residente
-            residente = Residentes.objects.filter(persona__email=user.email).first()
-            rol = "Residente" if residente else "Usuario"
+            # Lógica de respaldo: empleado o residente
+            empleado = Empleado.objects.filter(usuario=user).first()
+            if empleado:
+                rol = empleado.cargo
+            else:
+                residente = Residentes.objects.filter(persona__email=user.email).first()
+                rol = "Residente" if residente else "Usuario"
 
         return Response({
             "token": token.key,

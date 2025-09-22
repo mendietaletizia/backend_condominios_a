@@ -7,7 +7,7 @@ from usuarios.serializers.usuarios_serializer import (
     UsuarioSerializer, PersonaSerializer, RolesSerializer,
     PermisoSerializer, RolPermisoSerializer, EmpleadoSerializer,
     VehiculoSerializer, AccesoVehicularSerializer, VisitaSerializer,
-    InvitadoSerializer, ReclamoSerializer
+    InvitadoSerializer, ReclamoSerializer, ResidentesSerializer
 )
 from rest_framework.permissions import IsAuthenticated
 
@@ -20,8 +20,15 @@ class RolPermisoPermission(permissions.BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        empleado = Empleado.objects.filter(usuario=request.user).first()
-        return empleado and empleado.cargo.lower() == 'administrador'
+        # Permitir si es superusuario o tiene rol de administrador
+        return request.user.is_superuser or (request.user.rol and request.user.rol.nombre == 'Administrador')
+
+
+# Residentes ViewSet para exponer /usuarios/residentes/
+class ResidentesViewSet(viewsets.ModelViewSet):
+    queryset = Residentes.objects.all()
+    serializer_class = ResidentesSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
 
 

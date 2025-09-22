@@ -4,15 +4,15 @@ from django.contrib.auth.models import AbstractUser
 class Usuario(AbstractUser):
     id = models.AutoField(primary_key=True)
     email = models.EmailField(max_length=150, null=True, blank=True)
-    
+    rol = models.ForeignKey('Roles', on_delete=models.SET_NULL, null=True, blank=True, related_name='usuarios')
     # Remover campos que ya están en AbstractUser
     # username, password ya están en AbstractUser
-    
     def __str__(self):
         return self.username
 
 class Persona(models.Model):
     id = models.AutoField(primary_key=True)
+    ci = models.CharField(max_length=20, null=True, blank=True, unique=True)
     nombre = models.CharField(max_length=150)
     email = models.CharField(max_length=150, null=True, blank=True)
     telefono = models.CharField(max_length=20, null=True, blank=True)
@@ -24,6 +24,7 @@ class Residentes(models.Model):
     id = models.AutoField(primary_key=True)
     persona = models.ForeignKey(Persona, on_delete=models.CASCADE)
     usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, null=True, blank=True)
+    usuario_asociado = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='residentes_asociados', help_text='Usuario residente principal asociado (opcional)')
 
     def __str__(self):
         return f"Residente: {self.persona.nombre}"
