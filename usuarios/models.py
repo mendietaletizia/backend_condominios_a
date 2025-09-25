@@ -112,3 +112,119 @@ class Reclamo(models.Model):
 
     def __str__(self):
         return f"Reclamo: {self.titulo}"
+
+# Modelos para CU14: Gestión de Acceso con IA
+class PlacaVehiculo(models.Model):
+    """Placas de vehículos de residentes"""
+    id = models.AutoField(primary_key=True)
+    residente = models.ForeignKey(Residentes, on_delete=models.CASCADE, related_name='placas_vehiculo')
+    placa = models.CharField(max_length=10, unique=True)
+    marca = models.CharField(max_length=50)
+    modelo = models.CharField(max_length=50)
+    color = models.CharField(max_length=30)
+    activo = models.BooleanField(default=True)
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.placa} - {self.residente.persona.nombre}"
+
+class PlacaInvitado(models.Model):
+    """Placas de vehículos de visitantes autorizados"""
+    id = models.AutoField(primary_key=True)
+    residente = models.ForeignKey(Residentes, on_delete=models.CASCADE, related_name='placas_invitado')
+    placa = models.CharField(max_length=10)
+    marca = models.CharField(max_length=50, null=True, blank=True)
+    modelo = models.CharField(max_length=50, null=True, blank=True)
+    color = models.CharField(max_length=30, null=True, blank=True)
+    nombre_visitante = models.CharField(max_length=100, null=True, blank=True)
+    ci_visitante = models.CharField(max_length=20, null=True, blank=True)
+    fecha_autorizacion = models.DateTimeField()
+    fecha_vencimiento = models.DateTimeField(null=True, blank=True)
+    activo = models.BooleanField(default=True)
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Invitado: {self.placa} - {self.residente.persona.nombre}"
+
+class RegistroAcceso(models.Model):
+    """Registro de accesos vehiculares con IA"""
+    id = models.AutoField(primary_key=True)
+
+    # Información del vehículo detectado
+    placa_detectada = models.CharField(max_length=10)
+    marca_detectada = models.CharField(max_length=50, null=True, blank=True)
+    modelo_detectado = models.CharField(max_length=50, null=True, blank=True)
+    color_detectado = models.CharField(max_length=30, null=True, blank=True)
+
+    # Información de la IA
+    ia_confidence = models.DecimalField(max_digits=5, decimal_places=2, help_text='Confianza de la IA (0-100)')
+    ia_autentico = models.BooleanField(default=False, help_text='¿La IA confirmó que es auténtico?')
+    ia_placa_reconocida = models.BooleanField(default=False, help_text='¿La IA reconoció la placa?')
+    ia_vehiculo_reconocido = models.BooleanField(default=False, help_text='¿La IA reconoció el vehículo?')
+
+    # Estado del acceso
+    TIPO_ACCESO_CHOICES = [
+        ('entrada', 'Entrada'),
+        ('salida', 'Salida'),
+    ]
+    tipo_acceso = models.CharField(max_length=10, choices=TIPO_ACCESO_CHOICES)
+
+    ESTADO_ACCESO_CHOICES = [
+        ('autorizado', 'Autorizado'),
+        ('denegado', 'Denegado'),
+        ('pendiente', 'Pendiente de Autorización'),
+        ('error_ia', 'Error en IA'),
+    ]
+    estado_acceso = models.CharField(max_length=20, choices=ESTADO_ACCESO_CHOICES, default='pendiente')
+
+    # Información técnica
+    imagen_url = models.TextField(null=True, blank=True, help_text='URL de la imagen capturada')
+    imagen_path = models.TextField(null=True, blank=True, help_text='Path local de la imagen')
+    camara_id = models.CharField(max_length=50, null=True, blank=True, help_text='ID de la cámara que capturó')
+
+    # Información de tiempo
+    fecha_hora = models.DateTimeField(auto_now_add=True)
+    tiempo_procesamiento = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text='Tiempo en segundos que tomó procesar')
+
+    # Información adicional
+    observaciones = models.TextField(null=True, blank=True)
+    autorizado_por = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, help_text='Usuario que autorizó manualmente')
+
+    # Relaciones con placas registradas (si se encontró coincidencia)
+    placa_vehiculo = models.ForeignKey(PlacaVehiculo, on_delete=models.SET_NULL, null=True, blank=True)
+    placa_invitado = models.ForeignKey(PlacaInvitado, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.placa_detectada} - {self.fecha_hora} - {self.estado_acceso}"
+
+    class Meta:
+        ordering = ['-fecha_hora']
+
+class ConfiguracionAcceso(models.Model):
+    """Configuración general del sistema de acceso"""
+    id = models.AutoField(primary_key=True)
+
+    # Configuración de horarios
+    hora_inicio_restringida = models.TimeField(null=True, blank=True, help_text='Hora de inicio de restricción')
+    hora_fin_restringida = models.TimeField(null=True, blank=True, help_text='Hora de fin de restricción')
+
+    # Configuración de IA
+    umbral_confianza_placa = models.DecimalField(max_digits=5, decimal_places=2, default=80.0, help_text='Umbral mínimo de confianza para placa (0-100)')
+    umbral_confianza_vehiculo = models.DecimalField(max_digits=5, decimal_places=2, default=70.0, help_text='Umbral mínimo de confianza para vehículo (0-100)')
+    tiempo_max_procesamiento = models.DecimalField(max_digits=6, decimal_places=2, default=30.0, help_text='Tiempo máximo de procesamiento en segundos')
+
+    # Configuración de notificaciones
+    notificar_accesos_denegados = models.BooleanField(default=True)
+    notificar_accesos_no_reconocidos = models.BooleanField(default=True)
+    notificar_mantenimiento = models.BooleanField(default=True)
+
+    # Configuración de cámaras
+    camaras_activas = models.IntegerField(default=1, help_text='Número de cámaras activas')
+    fps_captura = models.IntegerField(default=15, help_text='Frames por segundo para captura')
+
+    # Configuración de retención
+    dias_retencion_imagenes = models.IntegerField(default=30, help_text='Días para retener imágenes')
+    dias_retencion_registros = models.IntegerField(default=90, help_text='Días para retener registros de acceso')
+
+    def __str__(self):
+        return "Configuración del Sistema de Acceso"

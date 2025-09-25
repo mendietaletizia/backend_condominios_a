@@ -1,7 +1,4 @@
 from django.db import models
-
-# Create your models here.
-from django.db import models
 from usuarios.models import Persona, Residentes
 
 # CU6: Unidades

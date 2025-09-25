@@ -1,5 +1,9 @@
 from rest_framework import serializers
-from usuarios.models import Residentes, Usuario, Persona, Roles, Permiso, RolPermiso, Empleado, Vehiculo, AccesoVehicular, Visita, Invitado, Reclamo
+from usuarios.models import (
+    Residentes, Usuario, Persona, Roles, Permiso, RolPermiso, Empleado,
+    Vehiculo, AccesoVehicular, Visita, Invitado, Reclamo,
+    PlacaVehiculo, PlacaInvitado, RegistroAcceso, ConfiguracionAcceso
+)
 from django.contrib.auth.hashers import make_password
 
 # Residentes serializer
@@ -93,4 +97,76 @@ class InvitadoSerializer(serializers.ModelSerializer):
 class ReclamoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reclamo
+        fields = '__all__'
+
+# Serializers para CU14: Gestión de Acceso con IA
+class PlacaVehiculoSerializer(serializers.ModelSerializer):
+    residente_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlacaVehiculo
+        fields = '__all__'
+
+    def get_residente_info(self, obj):
+        return {
+            'id': obj.residente.id,
+            'nombre': obj.residente.persona.nombre,
+            'email': obj.residente.persona.email
+        }
+
+class PlacaInvitadoSerializer(serializers.ModelSerializer):
+    residente_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlacaInvitado
+        fields = '__all__'
+
+    def get_residente_info(self, obj):
+        return {
+            'id': obj.residente.id,
+            'nombre': obj.residente.persona.nombre,
+            'email': obj.residente.persona.email
+        }
+
+class RegistroAccesoSerializer(serializers.ModelSerializer):
+    placa_vehiculo_info = serializers.SerializerMethodField()
+    placa_invitado_info = serializers.SerializerMethodField()
+    autorizado_por_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RegistroAcceso
+        fields = '__all__'
+
+    def get_placa_vehiculo_info(self, obj):
+        if obj.placa_vehiculo:
+            return {
+                'id': obj.placa_vehiculo.id,
+                'placa': obj.placa_vehiculo.placa,
+                'marca': obj.placa_vehiculo.marca,
+                'modelo': obj.placa_vehiculo.modelo
+            }
+        return None
+
+    def get_placa_invitado_info(self, obj):
+        if obj.placa_invitado:
+            return {
+                'id': obj.placa_invitado.id,
+                'placa': obj.placa_invitado.placa,
+                'nombre_visitante': obj.placa_invitado.nombre_visitante,
+                'fecha_vencimiento': obj.placa_invitado.fecha_vencimiento
+            }
+        return None
+
+    def get_autorizado_por_info(self, obj):
+        if obj.autorizado_por:
+            return {
+                'id': obj.autorizado_por.id,
+                'username': obj.autorizado_por.username,
+                'email': obj.autorizado_por.email
+            }
+        return None
+
+class ConfiguracionAccesoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConfiguracionAcceso
         fields = '__all__'

@@ -26,4 +26,5 @@ urlpatterns = [
     path('api/finanzas/', include('finanzas.urls')),       # CU18
     path('api/economia/', include('economia.urls')),       # CU8, CU9, CU19, CU20
     path('api/mantenimiento/', include('mantenimiento.urls')), # CU10
+    path('api/acceso/', include('usuarios.urls_acceso')), # CU14 - Gestión de Accesos
 ]
