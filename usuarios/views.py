@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, serializers
 from usuarios.models import (
     Usuario, Persona, Roles, Permiso, RolPermiso, Empleado,
     Vehiculo, AccesoVehicular, Visita, Invitado, Reclamo, Residentes
@@ -20,15 +20,102 @@ class RolPermisoPermission(permissions.BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        # Permitir si es superusuario o tiene rol de administrador
-        return request.user.is_superuser or (request.user.rol and request.user.rol.nombre == 'Administrador')
+        
+        # Permitir si es superusuario
+        if request.user.is_superuser:
+            return True
+        
+        # Permitir si tiene rol de administrador
+        if request.user.rol and request.user.rol.nombre == 'Administrador':
+            return True
+        
+        # Permitir si es empleado con cargo de administrador
+        empleado = Empleado.objects.filter(usuario=request.user).first()
+        if empleado and empleado.cargo.lower() == "administrador":
+            return True
+        
+        return False
 
 
 # Residentes ViewSet para exponer /usuarios/residentes/
 class ResidentesViewSet(viewsets.ModelViewSet):
     queryset = Residentes.objects.all()
     serializer_class = ResidentesSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [RolPermisoPermission]
+    
+    def get_queryset(self):
+        """Filtrar residentes según permisos del usuario"""
+        if not self.request.user or not self.request.user.is_authenticated:
+            return Residentes.objects.none()
+        
+        # Administradores pueden ver todos los residentes
+        if self.request.user.is_superuser or (self.request.user.rol and self.request.user.rol.nombre == 'Administrador'):
+            return Residentes.objects.all()
+        
+        # Empleados pueden ver todos los residentes
+        empleado = Empleado.objects.filter(usuario=self.request.user).first()
+        if empleado and empleado.cargo.lower() == "administrador":
+            return Residentes.objects.all()
+        
+        # Residentes solo pueden ver su propia información
+        residente = Residentes.objects.filter(usuario=self.request.user).first()
+        if residente:
+            return Residentes.objects.filter(id=residente.id)
+        
+        return Residentes.objects.none()
+    
+    def perform_create(self, serializer):
+        """Validaciones adicionales al crear un residente"""
+        # Validar que la persona asociada existe
+        persona_id = serializer.validated_data.get('persona')
+        if not persona_id:
+            raise serializers.ValidationError("Debe especificar una persona asociada")
+        
+        # Validar que no se duplique el usuario si se especifica
+        usuario_id = serializer.validated_data.get('usuario')
+        usuario_asociado_id = serializer.validated_data.get('usuario_asociado')
+        
+        if usuario_id and usuario_asociado_id:
+            raise serializers.ValidationError("Un residente no puede tener usuario propio y usuario asociado al mismo tiempo")
+        
+        serializer.save()
+    
+    def perform_update(self, serializer):
+        """Validaciones adicionales al actualizar un residente"""
+        # Validar que la persona asociada existe
+        persona_id = serializer.validated_data.get('persona')
+        if not persona_id:
+            raise serializers.ValidationError("Debe especificar una persona asociada")
+        
+        # Validar que no se duplique el usuario si se especifica
+        usuario_id = serializer.validated_data.get('usuario')
+        usuario_asociado_id = serializer.validated_data.get('usuario_asociado')
+        
+        if usuario_id and usuario_asociado_id:
+            raise serializers.ValidationError("Un residente no puede tener usuario propio y usuario asociado al mismo tiempo")
+        
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        """Manejar la eliminación de un residente"""
+        try:
+            # Eliminar relaciones con unidades primero
+            from comunidad.models import ResidentesUnidad
+            relaciones_unidad = ResidentesUnidad.objects.filter(id_residente=instance.id)
+            for relacion in relaciones_unidad:
+                relacion.delete()
+            
+            # Eliminar mascotas asociadas
+            from comunidad.models import Mascota
+            mascotas = Mascota.objects.filter(residente=instance.id)
+            for mascota in mascotas:
+                mascota.delete()
+            
+            # Eliminar el residente
+            instance.delete()
+            
+        except Exception as e:
+            raise serializers.ValidationError(f"Error al eliminar residente: {str(e)}")
 
 
 
@@ -47,16 +134,41 @@ class PersonaViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if not self.request.user or not self.request.user.is_authenticated:
             return Persona.objects.none()
+        
+        # Administradores pueden ver todas las personas
+        if self.request.user.is_superuser or (self.request.user.rol and self.request.user.rol.nombre == 'Administrador'):
+            return Persona.objects.all()
+        
         empleado = Empleado.objects.filter(usuario=self.request.user).first()
         if empleado and empleado.cargo.lower() == "administrador":
             return Persona.objects.all()
         elif empleado:
             return Persona.objects.filter(id=empleado.persona.id)
+        
         # Si es residente, solo puede ver su propia información
         residente = Residentes.objects.filter(usuario=self.request.user).first()
         if residente:
             return Persona.objects.filter(id=residente.persona.id)
+        
         return Persona.objects.none()
+    
+    def perform_create(self, serializer):
+        """Validaciones adicionales al crear una persona"""
+        ci = serializer.validated_data.get('ci')
+        if ci:
+            # Verificar que el CI no esté duplicado
+            if Persona.objects.filter(ci=ci).exists():
+                raise serializers.ValidationError("Ya existe una persona con este CI")
+        serializer.save()
+    
+    def perform_update(self, serializer):
+        """Validaciones adicionales al actualizar una persona"""
+        ci = serializer.validated_data.get('ci')
+        if ci:
+            # Verificar que el CI no esté duplicado (excluyendo el registro actual)
+            if Persona.objects.filter(ci=ci).exclude(id=self.get_object().id).exists():
+                raise serializers.ValidationError("Ya existe otra persona con este CI")
+        serializer.save()
 
 
 

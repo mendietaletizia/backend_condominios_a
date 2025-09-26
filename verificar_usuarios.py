@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+"""
+Script para verificar usuarios y roles en el sistema
+"""
 import os
 import django
 
@@ -6,74 +9,70 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend_condominio_a.settings')
 django.setup()
 
-from usuarios.models import Usuario
-from django.contrib.auth.hashers import make_password
+from usuarios.models import Usuario, Roles
+from django.contrib.auth.models import User
 
-def verificar_y_crear_usuarios():
-    print("🔍 Verificando usuarios existentes...")
+def verificar_usuarios():
+    """Verificar usuarios y roles en el sistema"""
+    print("=== VERIFICACIÓN DE USUARIOS Y ROLES ===\n")
     
-    # Listar usuarios existentes
+    # 1. Verificar roles existentes
+    print("1. ROLES DISPONIBLES:")
+    roles = Roles.objects.all()
+    if roles.exists():
+        for rol in roles:
+            print(f"   - ID: {rol.id}, Nombre: {rol.nombre}")
+    else:
+        print("   ❌ No hay roles creados")
+    
+    print()
+    
+    # 2. Verificar usuarios del sistema
+    print("2. USUARIOS DEL SISTEMA:")
     usuarios = Usuario.objects.all()
-    print(f"\n📋 Usuarios existentes ({usuarios.count()}):")
-    for usuario in usuarios:
-        print(f"  - {usuario.username} (activo: {usuario.is_active}, staff: {usuario.is_staff})")
-    
-    # Verificar si existe el usuario jael
-    jael_user = Usuario.objects.filter(username='jael').first()
-    if not jael_user:
-        print("\n❌ Usuario 'jael' no existe. Creándolo...")
-        jael_user = Usuario.objects.create(
-            username='jael',
-            email='jael@admin.com',
-            first_name='Jael',
-            last_name='Administrador',
-            is_active=True,
-            is_staff=True,
-            is_superuser=True
-        )
-        jael_user.set_password('password123')
-        jael_user.save()
-        print("✅ Usuario 'jael' creado exitosamente")
+    if usuarios.exists():
+        for usuario in usuarios:
+            rol_info = "Sin rol"
+            if usuario.rol:
+                rol_info = f"Rol: {usuario.rol.nombre} (ID: {usuario.rol.id})"
+            print(f"   - Username: {usuario.username}")
+            print(f"     Email: {usuario.email}")
+            print(f"     {rol_info}")
+            print(f"     Activo: {usuario.is_active}")
+            print()
     else:
-        print(f"\n✅ Usuario 'jael' existe (activo: {jael_user.is_active})")
-        # Verificar contraseña
-        if jael_user.check_password('password123'):
-            print("✅ Contraseña correcta")
-        else:
-            print("❌ Contraseña incorrecta, actualizando...")
-            jael_user.set_password('password123')
-            jael_user.save()
-            print("✅ Contraseña actualizada")
+        print("   ❌ No hay usuarios creados")
     
-    # Verificar si existe el usuario residente1
-    residente1_user = Usuario.objects.filter(username='residente1').first()
-    if not residente1_user:
-        print("\n❌ Usuario 'residente1' no existe. Creándolo...")
-        residente1_user = Usuario.objects.create(
-            username='residente1',
-            email='residente1@test.com',
-            first_name='Residente',
-            last_name='Uno',
-            is_active=True,
-            is_staff=False,
-            is_superuser=False
-        )
-        residente1_user.set_password('password123')
-        residente1_user.save()
-        print("✅ Usuario 'residente1' creado exitosamente")
+    print()
+    
+    # 3. Verificar usuarios con rol residente
+    print("3. USUARIOS CON ROL RESIDENTE:")
+    usuarios_residentes = Usuario.objects.filter(rol__nombre__iexact='residente')
+    if usuarios_residentes.exists():
+        for usuario in usuarios_residentes:
+            print(f"   - {usuario.username} ({usuario.email})")
     else:
-        print(f"\n✅ Usuario 'residente1' existe (activo: {residente1_user.is_active})")
-        # Verificar contraseña
-        if residente1_user.check_password('password123'):
-            print("✅ Contraseña correcta")
-        else:
-            print("❌ Contraseña incorrecta, actualizando...")
-            residente1_user.set_password('password123')
-            residente1_user.save()
-            print("✅ Contraseña actualizada")
+        print("   ❌ No hay usuarios con rol 'residente'")
+        print("   💡 Necesitas crear usuarios con rol 'residente' para que aparezcan en el campo 'Usuario Asociado'")
     
-    print("\n🎉 Verificación completada!")
+    print()
+    
+    # 4. Crear rol residente si no existe
+    if not Roles.objects.filter(nombre__iexact='residente').exists():
+        print("4. CREANDO ROL 'RESIDENTE':")
+        rol_residente = Roles.objects.create(nombre='residente')
+        print(f"   ✅ Rol 'residente' creado con ID: {rol_residente.id}")
+    else:
+        print("4. ROL 'RESIDENTE' YA EXISTE")
+    
+    print()
+    
+    # 5. Sugerencias
+    print("5. SUGERENCIAS:")
+    if not usuarios_residentes.exists():
+        print("   - Crear usuarios con rol 'residente' usando el panel de administración")
+        print("   - O crear usuarios programáticamente")
+        print("   - Los usuarios con rol 'residente' aparecerán en el campo 'Usuario Asociado'")
 
 if __name__ == "__main__":
-    verificar_y_crear_usuarios()
-
+    verificar_usuarios()

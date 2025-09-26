@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from comunidad.views import (
     UnidadViewSet, ResidentesUnidadViewSet, EventoViewSet,
-    NotificacionViewSet, NotificacionResidenteViewSet, ActaViewSet
+    NotificacionViewSet, NotificacionResidenteViewSet, ActaViewSet, MascotaViewSet
 )
 
 router = DefaultRouter()
@@ -12,6 +12,7 @@ router.register(r'eventos', EventoViewSet)
 router.register(r'notificaciones', NotificacionViewSet)
 router.register(r'notificaciones-residente', NotificacionResidenteViewSet)
 router.register(r'actas', ActaViewSet)
+router.register(r'mascotas', MascotaViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

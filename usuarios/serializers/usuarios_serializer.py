@@ -11,10 +11,78 @@ class ResidentesSerializer(serializers.ModelSerializer):
     usuario_asociado = serializers.PrimaryKeyRelatedField(
         queryset=Usuario.objects.all(), required=False, allow_null=True
     )
+    persona_info = serializers.SerializerMethodField()
+    usuario_info = serializers.SerializerMethodField()
+    usuario_asociado_info = serializers.SerializerMethodField()
+    unidades_info = serializers.SerializerMethodField()
+    mascotas_info = serializers.SerializerMethodField()
 
     class Meta:
         model = Residentes
         fields = '__all__'
+    
+    def get_persona_info(self, obj):
+        if obj.persona:
+            return {
+                'id': obj.persona.id,
+                'ci': obj.persona.ci,
+                'nombre': obj.persona.nombre,
+                'email': obj.persona.email,
+                'telefono': obj.persona.telefono
+            }
+        return None
+    
+    def get_usuario_info(self, obj):
+        if obj.usuario:
+            return {
+                'id': obj.usuario.id,
+                'username': obj.usuario.username,
+                'email': obj.usuario.email,
+                'rol': obj.usuario.rol.nombre if obj.usuario.rol else None
+            }
+        return None
+    
+    def get_usuario_asociado_info(self, obj):
+        if obj.usuario_asociado:
+            return {
+                'id': obj.usuario_asociado.id,
+                'username': obj.usuario_asociado.username,
+                'email': obj.usuario_asociado.email
+            }
+        return None
+    
+    def get_unidades_info(self, obj):
+        from comunidad.models import ResidentesUnidad
+        relaciones = ResidentesUnidad.objects.filter(id_residente=obj.id, estado=True)
+        return [
+            {
+                'id': rel.id,
+                'unidad_id': rel.id_unidad.id,
+                'numero_casa': rel.id_unidad.numero_casa,
+                'rol_en_unidad': rel.rol_en_unidad,
+                'fecha_inicio': rel.fecha_inicio,
+                'fecha_fin': rel.fecha_fin
+            }
+            for rel in relaciones
+        ]
+    
+    def get_mascotas_info(self, obj):
+        from comunidad.models import Mascota
+        mascotas = Mascota.objects.filter(residente=obj.id, activo=True)
+        return [
+            {
+                'id': mascota.id,
+                'nombre': mascota.nombre,
+                'tipo': mascota.tipo,
+                'raza': mascota.raza,
+                'color': mascota.color,
+                'fecha_nacimiento': mascota.fecha_nacimiento,
+                'observaciones': mascota.observaciones,
+                'unidad_id': mascota.unidad.id if mascota.unidad else None,
+                'numero_casa': mascota.unidad.numero_casa if mascota.unidad else None
+            }
+            for mascota in mascotas
+        ]
 
 # Roles serializer
 class RolesSerializer(serializers.ModelSerializer):
@@ -65,9 +133,49 @@ class RolPermisoSerializer(serializers.ModelSerializer):
 
 # Empleado serializer
 class EmpleadoSerializer(serializers.ModelSerializer):
+    persona_info = serializers.SerializerMethodField()
+    usuario_info = serializers.SerializerMethodField()
+    cargo_display = serializers.SerializerMethodField()
+    
     class Meta:
         model = Empleado
-        fields = ['id', 'persona', 'usuario', 'cargo']
+        fields = ['id', 'persona', 'usuario', 'cargo', 'persona_info', 'usuario_info', 'cargo_display']
+    
+    def get_persona_info(self, obj):
+        if obj.persona:
+            return {
+                'id': obj.persona.id,
+                'nombre': obj.persona.nombre,
+                'ci': obj.persona.ci,
+                'telefono': obj.persona.telefono,
+                'email': obj.persona.email
+            }
+        return None
+    
+    def get_usuario_info(self, obj):
+        if obj.usuario:
+            return {
+                'id': obj.usuario.id,
+                'username': obj.usuario.username,
+                'email': obj.usuario.email,
+                'is_active': obj.usuario.is_active,
+                'rol': obj.usuario.rol.nombre if obj.usuario.rol else None
+            }
+        return None
+    
+    def get_cargo_display(self, obj):
+        cargo_colors = {
+            'administrador': 'red',
+            'seguridad': 'blue',
+            'mantenimiento': 'green',
+            'limpieza': 'orange',
+            'jardinero': 'green',
+            'portero': 'purple'
+        }
+        return {
+            'nombre': obj.cargo.title(),
+            'color': cargo_colors.get(obj.cargo.lower(), 'default')
+        }
 
 # Vehiculo serializer
 class VehiculoSerializer(serializers.ModelSerializer):

@@ -11,6 +11,9 @@ from mantenimiento.serializers.mantenimiento_serializer import (
     BitacoraMantenimientoSerializer, ReglamentoSerializer
 )
 from usuarios.models import Empleado
+from comunidad.models import Evento
+from datetime import datetime
+from django.utils import timezone
 
 class RolPermiso(permissions.BasePermission):
     """
@@ -18,16 +21,25 @@ class RolPermiso(permissions.BasePermission):
     Residente puede crear reservas pero no modificar áreas.
     """
     def has_permission(self, request, view):
+        # Permitir lectura pública (GET, HEAD, OPTIONS)
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
         if not request.user or not request.user.is_authenticated:
             return False
+
+        # Administrador por empleado
         empleado = Empleado.objects.filter(usuario=request.user).first()
         if empleado and empleado.cargo.lower() == "administrador":
+            return True
+        # Administrador por rol de usuario
+        if hasattr(request.user, 'rol') and request.user.rol and request.user.rol.nombre.lower() == 'administrador':
             return True
         # Para reservas, permitimos POST y GET a residentes
         if view.basename == 'reserva':
             return request.method in ['GET', 'POST']
-        # Solo lectura para otros
-        return request.method in permissions.SAFE_METHODS
+        # Solo lectura para otros (ya cubierto arriba); bloquear escritura
+        return False
 
 # Áreas comunes
 class AreaComunViewSet(viewsets.ModelViewSet):
@@ -88,6 +100,35 @@ class ReservaViewSet(viewsets.ModelViewSet):
             'disponible': disponible,
             'conflictos': reservas_conflicto.count()
         })
+
+    @action(detail=True, methods=['post'])
+    def confirmar(self, request, pk=None):
+        """Confirmar una reserva y generar un evento en la agenda (CU11)."""
+        reserva = self.get_object()
+        reserva.estado = 'confirmada'
+        reserva.save()
+
+        # Crear evento asociado (sin FK directa, guardamos datos descriptivos)
+        try:
+            fecha_evento = datetime.combine(reserva.fecha, reserva.hora_inicio)
+            if timezone.is_naive(fecha_evento):
+                fecha_evento = timezone.make_aware(fecha_evento)
+        except Exception:
+            fecha_evento = timezone.now()
+
+        titulo = f"Reserva confirmada - {reserva.area.nombre}"
+        descripcion = f"Evento por reserva del área {reserva.area.nombre} de {reserva.hora_inicio} a {reserva.hora_fin}. Residente ID: {reserva.residente_id}."
+        Evento.objects.create(titulo=titulo, descripcion=descripcion, fecha=fecha_evento, estado=True)
+
+        return Response({'detail': 'Reserva confirmada y evento creado'}, status=200)
+
+    @action(detail=True, methods=['post'])
+    def cancelar(self, request, pk=None):
+        """Cancelar una reserva (y no crear evento)."""
+        reserva = self.get_object()
+        reserva.estado = 'cancelada'
+        reserva.save()
+        return Response({'detail': 'Reserva cancelada'}, status=200)
 
 # Vistas para los nuevos modelos
 class MantenimientoViewSet(viewsets.ModelViewSet):
