@@ -113,6 +113,48 @@ class UsuarioSerializer(serializers.ModelSerializer):
             validated_data['password'] = make_password(validated_data['password'])
         return super().update(instance, validated_data)
 
+# Serializer específico para usuarios residentes (para selección de propietarios)
+class UsuarioResidenteSerializer(serializers.ModelSerializer):
+    """
+    Serializer específico para usuarios con rol de residente
+    Incluye información adicional para facilitar la selección como propietario
+    """
+    rol = RolesSerializer(read_only=True)
+    residente_info = serializers.SerializerMethodField()
+    nombre_completo = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Usuario
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_active', 'rol', 'residente_info', 'nombre_completo']
+    
+    def get_residente_info(self, obj):
+        """Obtener información del residente asociado si existe"""
+        try:
+            from usuarios.models import Residentes
+            residente = Residentes.objects.filter(usuario_asociado=obj).first()
+            if residente:
+                return {
+                    'id': residente.id,
+                    'nombre': residente.persona.nombre if residente.persona else None,
+                    'ci': residente.persona.ci if residente.persona else None,
+                    'telefono': residente.persona.telefono if residente.persona else None,
+                    'email': residente.persona.email if residente.persona else None
+                }
+        except Exception:
+            pass
+        return None
+    
+    def get_nombre_completo(self, obj):
+        """Obtener nombre completo del usuario"""
+        if obj.first_name and obj.last_name:
+            return f"{obj.first_name} {obj.last_name}"
+        elif obj.first_name:
+            return obj.first_name
+        elif obj.last_name:
+            return obj.last_name
+        else:
+            return obj.username
+
 # Persona serializer
 class PersonaSerializer(serializers.ModelSerializer):
     class Meta:

@@ -5,8 +5,8 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from economia.models import Gastos, Multa
-from finanzas.models import Pago, Expensa
-from economia.serializers.economia_serializer import GastosSerializer, MultaSerializer, PagoSerializer, ExpensaSerializer
+# from finanzas.models import Pago, Expensa  # Comentado temporalmente
+from economia.serializers.economia_serializer import GastosSerializer, MultaSerializer
 from usuarios.models import Empleado
 from django.db.models import Sum, Count
 
@@ -48,6 +48,73 @@ class MultaViewSet(viewsets.ModelViewSet):
     queryset = Multa.objects.all()
     serializer_class = MultaSerializer
     permission_classes = [RolPermiso]
+    
+    def get_queryset(self):
+        """Filtrar multas por estado y residente"""
+        queryset = super().get_queryset()
+        estado = self.request.query_params.get('estado', None)
+        residente_id = self.request.query_params.get('residente_id', None)
+        
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        
+        if residente_id:
+            queryset = queryset.filter(residente_id=residente_id)
+        
+        return queryset.order_by('-fecha_emision')
+    
+    @action(detail=False, methods=['get'])
+    def pendientes(self, request):
+        """Obtener multas pendientes de pago"""
+        multas_pendientes = self.get_queryset().filter(estado='pendiente')
+        serializer = self.get_serializer(multas_pendientes, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def vencidas(self, request):
+        """Obtener multas vencidas"""
+        from django.utils import timezone
+        hoy = timezone.now().date()
+        multas_vencidas = self.get_queryset().filter(
+            estado='pendiente',
+            fecha_vencimiento__lt=hoy
+        )
+        serializer = self.get_serializer(multas_vencidas, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def marcar_pagada(self, request, pk=None):
+        """Marcar una multa como pagada"""
+        multa = self.get_object()
+        if multa.estado == 'pagada':
+            return Response(
+                {'error': 'La multa ya está marcada como pagada'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        multa.estado = 'pagada'
+        multa.save()
+        
+        # Crear notificación de pago
+        from comunidad.services import NotificacionService
+        NotificacionService.crear_notificacion_multa(multa)
+        
+        serializer = self.get_serializer(multa)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def por_reglamento(self, request):
+        """Obtener multas por artículo de reglamento"""
+        reglamento_id = request.query_params.get('reglamento_id')
+        if not reglamento_id:
+            return Response(
+                {'error': 'Parámetro reglamento_id es requerido'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        multas = self.get_queryset().filter(reglamento_id=reglamento_id)
+        serializer = self.get_serializer(multas, many=True)
+        return Response(serializer.data)
 
 # CU19: Reportes y analítica
 class ReporteViewSet(viewsets.ViewSet):
@@ -55,13 +122,14 @@ class ReporteViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
     def resumen_financiero(self, request):
-        total_pagos = Pago.objects.aggregate(total=Sum('monto'))['total'] or 0
-        total_expensas = Expensa.objects.aggregate(total=Sum('monto'))['total'] or 0
+        # Comentado temporalmente - CU7 eliminado
+        # total_pagos = Pago.objects.aggregate(total=Sum('monto'))['total'] or 0
+        # total_expensas = Expensa.objects.aggregate(total=Sum('monto'))['total'] or 0
         total_gastos = Gastos.objects.aggregate(total=Sum('monto'))['total'] or 0
         total_multas = Multa.objects.aggregate(total=Sum('monto'))['total'] or 0
         return Response({
-            "total_pagos": total_pagos,
-            "total_expensas": total_expensas,
+            "total_pagos": 0,  # CU7 eliminado
+            "total_expensas": 0,  # Temporal
             "total_gastos": total_gastos,
             "total_multas": total_multas
         })
@@ -74,54 +142,31 @@ class MorosidadViewSet(viewsets.ViewSet):
     def predecir_morosidad(self, request):
         """
         Retorna morosidad estimada por residente basado en pagos atrasados.
-        Simple aproximación: si fecha_vencimiento < hoy y estado pago pendiente
+        Comentado temporalmente hasta que finanzas esté configurado.
         """
         import datetime
-        from django.db.models import Sum, Count
-        from usuarios.models import Residentes
         
         hoy = datetime.date.today()
         
-        # Obtener residentes con pagos vencidos
-        residentes_morosos = Residentes.objects.filter(
-            pago__fecha_vencimiento__lt=hoy,
-            pago__estado_pago='pendiente'
-        ).annotate(
-            total_moroso=Sum('pago__monto'),
-            cantidad_pagos_vencidos=Count('pago')
-        ).values('id', 'persona__nombre', 'total_moroso', 'cantidad_pagos_vencidos')
-        
-        # Calcular estadísticas generales
-        total_morosidad = sum(r['total_moroso'] or 0 for r in residentes_morosos)
-        cantidad_morosos = len(residentes_morosos)
-        
+        # Comentado temporalmente hasta que finanzas esté configurado
         return Response({
-            'residentes_morosos': list(residentes_morosos),
+            'residentes_morosos': [],
             'estadisticas': {
-                'total_morosidad': total_morosidad,
-                'cantidad_morosos': cantidad_morosos,
-                'fecha_analisis': hoy
+                'total_morosidad': 0,
+                'cantidad_morosos': 0,
+                'fecha_analisis': hoy,
+                'mensaje': 'Funcionalidad temporalmente deshabilitada hasta configuración completa de finanzas'
             }
         })
     
     @action(detail=False, methods=['get'])
     def tendencias_pagos(self, request):
-        """Análisis de tendencias de pagos por mes"""
-        from django.db.models import Sum
-        from django.db.models.functions import TruncMonth
+        """Análisis de tendencias de pagos por mes - CU7 eliminado"""
         import datetime
         
-        # Pagos por mes del último año
-        pagos_por_mes = Pago.objects.filter(
-            fecha_pago__gte=datetime.date.today() - datetime.timedelta(days=365)
-        ).annotate(
-            mes=TruncMonth('fecha_pago')
-        ).values('mes').annotate(
-            total=Sum('monto'),
-            cantidad=Count('id')
-        ).order_by('mes')
-        
+        # CU7 eliminado - solo CU22 (pagos de cuotas) disponible
         return Response({
-            'tendencias_mensuales': list(pagos_por_mes),
-            'periodo_analisis': 'Últimos 12 meses'
+            'tendencias_mensuales': [],
+            'periodo_analisis': 'Últimos 12 meses',
+            'mensaje': 'CU7 eliminado. Solo disponible CU22 - Gestión de Cuotas y Expensas'
         })

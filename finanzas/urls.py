@@ -1,10 +1,14 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from finanzas.views import ExpensaViewSet, PagoViewSet
+from .views import (
+    CuotaMensualViewSet, CuotaUnidadViewSet, PagoCuotaViewSet
+)
 
 router = DefaultRouter()
-router.register(r'expensas', ExpensaViewSet)
-router.register(r'pagos', PagoViewSet)
+# CU22: Gestión de Cuotas y Expensas
+router.register(r'cuotas-mensuales', CuotaMensualViewSet)
+router.register(r'cuotas-unidad', CuotaUnidadViewSet)
+router.register(r'pagos', PagoCuotaViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

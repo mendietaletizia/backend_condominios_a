@@ -251,7 +251,7 @@ class DatabaseQueryOptimizer:
         return {
             'gastos': Gastos.objects.aggregate(total=Sum('monto'))['total'] or 0,
             'multas': Multa.objects.aggregate(total=Sum('monto'))['total'] or 0,
-            'pagos': Pago.objects.aggregate(total=Sum('monto'))['total'] or 0,
+            'pagos': 0,  # CU7 eliminado
             'expensas': Expensa.objects.aggregate(total=Sum('monto'))['total'] or 0,
         }
 

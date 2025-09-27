@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 class Usuario(AbstractUser):
     id = models.AutoField(primary_key=True)
@@ -7,6 +8,19 @@ class Usuario(AbstractUser):
     rol = models.ForeignKey('Roles', on_delete=models.SET_NULL, null=True, blank=True, related_name='usuarios')
     # Remover campos que ya están en AbstractUser
     # username, password ya están en AbstractUser
+    
+    @property
+    def nombre_completo(self):
+        """Obtener nombre completo del usuario"""
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        elif self.first_name:
+            return self.first_name
+        elif self.last_name:
+            return self.last_name
+        else:
+            return self.username
+    
     def __str__(self):
         return self.username
 
@@ -28,6 +42,58 @@ class Residentes(models.Model):
 
     def __str__(self):
         return f"Residente: {self.persona.nombre}"
+    
+    def save(self, *args, **kwargs):
+        """Override save para manejar la asociación automática de usuario"""
+        super().save(*args, **kwargs)
+        
+        # Si se asocia un usuario_asociado, crear automáticamente la relación como propietario
+        if self.usuario_asociado and hasattr(self, '_creating_usuario_asociado'):
+            self._create_propietario_relation()
+    
+    def _create_propietario_relation(self):
+        """Crear relación automática como propietario si no existe"""
+        try:
+            from comunidad.models import ResidentesUnidad, Unidad
+            
+            # Buscar si ya existe una relación activa
+            existing_relation = ResidentesUnidad.objects.filter(
+                id_residente=self,
+                estado=True,
+                rol_en_unidad='propietario'
+            ).first()
+            
+            if not existing_relation:
+                # Buscar una unidad disponible (por ahora, la primera activa)
+                # En el futuro, esto podría ser más específico
+                unidad_disponible = Unidad.objects.filter(activa=True).first()
+                
+                if unidad_disponible:
+                    # Verificar si la unidad ya tiene un propietario
+                    propietario_existente = ResidentesUnidad.objects.filter(
+                        id_unidad=unidad_disponible,
+                        estado=True,
+                        rol_en_unidad='propietario'
+                    ).first()
+                    
+                    if not propietario_existente:
+                        ResidentesUnidad.objects.create(
+                            id_residente=self,
+                            id_unidad=unidad_disponible,
+                            rol_en_unidad='propietario',
+                            fecha_inicio=timezone.now().date(),
+                            estado=True
+                        )
+        except Exception as e:
+            # Log the error but don't break the save
+            print(f"Error creando relación propietario: {e}")
+    
+    def asociar_usuario(self, usuario):
+        """Método para asociar un usuario y crear automáticamente la relación como propietario"""
+        self.usuario_asociado = usuario
+        self._creating_usuario_asociado = True
+        self.save()
+        delattr(self, '_creating_usuario_asociado')
 
 class Roles(models.Model):
     id = models.AutoField(primary_key=True)

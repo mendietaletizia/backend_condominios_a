@@ -8,5 +8,7 @@ class GastosAdmin(admin.ModelAdmin):
 
 @admin.register(Multa)
 class MultaAdmin(admin.ModelAdmin):
-    list_display = ['motivo', 'monto', 'fecha', 'residente']
-    list_filter = ['fecha']
+    list_display = ['motivo', 'monto', 'fecha_emision', 'fecha_vencimiento', 'estado', 'residente']
+    list_filter = ['fecha_emision', 'estado', 'reglamento']
+    search_fields = ['motivo', 'residente__persona__nombre', 'residente__persona__apellido']
+    readonly_fields = ['fecha_creacion', 'fecha_modificacion']

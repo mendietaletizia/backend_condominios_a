@@ -10,7 +10,10 @@ class LoginSerializer(serializers.Serializer):
         username = data.get('username')
         password = data.get('password')
 
-        if username and password:
+        if not username or not password:
+            raise serializers.ValidationError("Debe proporcionar username y password")
+
+        try:
             user = authenticate(username=username, password=password)
             if not user:
                 raise serializers.ValidationError("Credenciales inválidas")
@@ -18,8 +21,8 @@ class LoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError("Usuario inactivo")
             data['user'] = user
             return data
-        else:
-            raise serializers.ValidationError("Debe proporcionar username y password")
+        except Exception as e:
+            raise serializers.ValidationError(f"Error de autenticación: {str(e)}")
 
 class PlacaInvitadoSerializer(serializers.ModelSerializer):
     class Meta:

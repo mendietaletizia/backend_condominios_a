@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta
+from .models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta, Reglamento
 
 @admin.register(Unidad)
 class UnidadAdmin(admin.ModelAdmin):
@@ -30,3 +30,26 @@ class NotificacionResidenteAdmin(admin.ModelAdmin):
 class ActaAdmin(admin.ModelAdmin):
     list_display = ['fecha_creacion', 'residente']
     list_filter = ['fecha_creacion']
+
+@admin.register(Reglamento)
+class ReglamentoAdmin(admin.ModelAdmin):
+    list_display = ['articulo', 'titulo', 'tipo', 'monto_multa', 'activo']
+    list_filter = ['tipo', 'activo', 'fecha_creacion']
+    search_fields = ['articulo', 'titulo', 'descripcion']
+    readonly_fields = ['fecha_creacion', 'fecha_modificacion']
+    fieldsets = (
+        ('Información Básica', {
+            'fields': ('articulo', 'titulo', 'descripcion', 'tipo')
+        }),
+        ('Sanciones', {
+            'fields': ('monto_multa', 'dias_suspension'),
+            'classes': ('collapse',)
+        }),
+        ('Estado', {
+            'fields': ('activo',)
+        }),
+        ('Fechas', {
+            'fields': ('fecha_creacion', 'fecha_modificacion'),
+            'classes': ('collapse',)
+        }),
+    )

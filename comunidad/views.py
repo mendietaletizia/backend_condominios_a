@@ -2,12 +2,14 @@ from django.shortcuts import render
 from django.utils import timezone
 
 # Create your views here.
-from rest_framework import viewsets, permissions, serializers
-from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta, Mascota
+from rest_framework import viewsets, permissions, serializers, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta, Mascota, Reglamento
 from comunidad.serializers.comunidad_serializer import (
     UnidadSerializer, ResidentesUnidadSerializer,
     EventoSerializer, NotificacionSerializer,
-    NotificacionResidenteSerializer, ActaSerializer, MascotaSerializer
+    NotificacionResidenteSerializer, ActaSerializer, MascotaSerializer, ReglamentoSerializer
 )
 from usuarios.models import Empleado
 
@@ -203,3 +205,43 @@ class MascotaViewSet(viewsets.ModelViewSet):
             return Mascota.objects.filter(residente=residente)
         
         return Mascota.objects.none()
+
+class ReglamentoViewSet(viewsets.ModelViewSet):
+    """CRUD para gestión de reglamento del condominio"""
+    queryset = Reglamento.objects.all()
+    serializer_class = ReglamentoSerializer
+    permission_classes = [RolPermiso]
+    
+    def get_queryset(self):
+        """Filtrar reglamentos activos por defecto"""
+        queryset = super().get_queryset()
+        activo = self.request.query_params.get('activo', None)
+        
+        if activo is not None:
+            if activo.lower() == 'true':
+                queryset = queryset.filter(activo=True)
+            elif activo.lower() == 'false':
+                queryset = queryset.filter(activo=False)
+        
+        return queryset.order_by('articulo')
+    
+    @action(detail=False, methods=['get'])
+    def por_tipo(self, request):
+        """Obtener reglamentos por tipo"""
+        tipo = request.query_params.get('tipo')
+        if not tipo:
+            return Response(
+                {'error': 'Parámetro tipo es requerido'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        reglamentos = self.get_queryset().filter(tipo=tipo, activo=True)
+        serializer = self.get_serializer(reglamentos, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def activos(self, request):
+        """Obtener solo reglamentos activos"""
+        reglamentos = self.get_queryset().filter(activo=True)
+        serializer = self.get_serializer(reglamentos, many=True)
+        return Response(serializer.data)

@@ -362,7 +362,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 'notificaciones_pendientes': Notificacion.objects.filter(leida=False).count(),
                 'gastos_total': Gastos.objects.aggregate(total=Sum('monto'))['total'] or 0,
                 'multas_total': Multa.objects.aggregate(total=Sum('monto'))['total'] or 0,
-                'pagos_total': Pago.objects.aggregate(total=Sum('monto'))['total'] or 0,
+                'pagos_total': 0,  # CU7 eliminado
             }
 
             return Response(stats)

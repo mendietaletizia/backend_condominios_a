@@ -1,10 +1,11 @@
 from rest_framework import serializers
-from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta, Mascota
+from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta, Mascota, Reglamento
 from mantenimiento.models import AreaComun
 from usuarios.models import Residentes, Usuario, PlacaVehiculo
 
 class UnidadSerializer(serializers.ModelSerializer):
     residentes_info = serializers.SerializerMethodField()
+    propietario_info = serializers.SerializerMethodField()
     mascotas_info = serializers.SerializerMethodField()
     vehiculos_info = serializers.SerializerMethodField()
     total_residentes_real = serializers.SerializerMethodField()
@@ -33,6 +34,48 @@ class UnidadSerializer(serializers.ModelSerializer):
             }
             for rel in relaciones
         ]
+    
+    def get_propietario_info(self, obj):
+        """Obtener información del propietario de la unidad"""
+        try:
+            propietario_rel = obj.residentesunidad_set.filter(
+                estado=True, 
+                rol_en_unidad='propietario'
+            ).first()
+            
+            if propietario_rel and propietario_rel.id_residente:
+                residente = propietario_rel.id_residente
+                
+                # Si el residente tiene un usuario asociado, mostrar información del usuario
+                if residente.usuario_asociado:
+                    usuario = residente.usuario_asociado
+                    return {
+                        'id': usuario.id,
+                        'nombre': usuario.nombre_completo if hasattr(usuario, 'nombre_completo') else usuario.username,
+                        'username': usuario.username,
+                        'email': usuario.email,
+                        'tiene_usuario': True,
+                        'usuario_id': usuario.id,
+                        'rol': usuario.rol.nombre if usuario.rol else 'Sin rol',
+                        'fecha_inicio': propietario_rel.fecha_inicio,
+                        'fecha_fin': propietario_rel.fecha_fin
+                    }
+                # Si no tiene usuario asociado, mostrar información del residente
+                else:
+                    return {
+                        'id': residente.id,
+                        'nombre': residente.persona.nombre if residente.persona else 'Sin nombre',
+                        'username': 'Sin usuario',
+                        'email': residente.persona.email if residente.persona else 'Sin email',
+                        'tiene_usuario': False,
+                        'usuario_id': None,
+                        'rol': 'Sin rol',
+                        'fecha_inicio': propietario_rel.fecha_inicio,
+                        'fecha_fin': propietario_rel.fecha_fin
+                    }
+            return None
+        except Exception:
+            return None
     
     def get_mascotas_info(self, obj):
         """Obtener información detallada de mascotas asociadas"""
@@ -257,3 +300,9 @@ class MascotaSerializer(serializers.ModelSerializer):
                 'metros_cuadrados': obj.unidad.metros_cuadrados
             }
         return None
+
+class ReglamentoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Reglamento
+        fields = '__all__'
+        read_only_fields = ['fecha_creacion', 'fecha_modificacion']

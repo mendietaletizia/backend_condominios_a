@@ -92,10 +92,11 @@ def create_optimized_indexes():
             "CREATE INDEX IF NOT EXISTS idx_empleados_cargo ON usuarios_empleado (cargo)",
 
             # Índices para finanzas
-            "CREATE INDEX IF NOT EXISTS idx_pagos_residente ON finanzas_pago (residente_id)",
-            "CREATE INDEX IF NOT EXISTS idx_pagos_fecha ON finanzas_pago (fecha_pago)",
-            "CREATE INDEX IF NOT EXISTS idx_pagos_estado ON finanzas_pago (estado_pago)",
-            "CREATE INDEX IF NOT EXISTS idx_pagos_monto ON finanzas_pago (monto)",
+            # Índices para pagos de cuotas (CU22) - mantenidos
+            "CREATE INDEX IF NOT EXISTS idx_pagos_cuota_residente ON finanzas_pagocuota (cuota_unidad_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pagos_cuota_fecha ON finanzas_pagocuota (fecha_pago)",
+            "CREATE INDEX IF NOT EXISTS idx_pagos_cuota_metodo ON finanzas_pagocuota (metodo_pago)",
+            "CREATE INDEX IF NOT EXISTS idx_pagos_cuota_monto ON finanzas_pagocuota (monto)",
 
             # Índices para economía
             "CREATE INDEX IF NOT EXISTS idx_gastos_fecha ON economia_gastos (fecha)",
@@ -111,7 +112,7 @@ def create_optimized_indexes():
 
             # Índices compuestos para consultas comunes
             "CREATE INDEX IF NOT EXISTS idx_usuarios_persona_rol ON usuarios_usuario (persona_id, rol_id)",
-            "CREATE INDEX IF NOT EXISTS idx_pagos_residente_fecha ON finanzas_pago (residente_id, fecha_pago)",
+            "CREATE INDEX IF NOT EXISTS idx_pagos_cuota_residente_fecha ON finanzas_pagocuota (cuota_unidad_id, fecha_pago)",
             "CREATE INDEX IF NOT EXISTS idx_gastos_fecha_monto ON economia_gastos (fecha, monto)",
         ]
 

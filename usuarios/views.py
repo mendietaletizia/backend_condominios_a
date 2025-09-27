@@ -7,7 +7,8 @@ from usuarios.serializers.usuarios_serializer import (
     UsuarioSerializer, PersonaSerializer, RolesSerializer,
     PermisoSerializer, RolPermisoSerializer, EmpleadoSerializer,
     VehiculoSerializer, AccesoVehicularSerializer, VisitaSerializer,
-    InvitadoSerializer, ReclamoSerializer, ResidentesSerializer
+    InvitadoSerializer, ReclamoSerializer, ResidentesSerializer,
+    UsuarioResidenteSerializer
 )
 from rest_framework.permissions import IsAuthenticated
 
@@ -41,7 +42,7 @@ class RolPermisoPermission(permissions.BasePermission):
 class ResidentesViewSet(viewsets.ModelViewSet):
     queryset = Residentes.objects.all()
     serializer_class = ResidentesSerializer
-    permission_classes = [RolPermisoPermission]
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         """Filtrar residentes según permisos del usuario"""
@@ -49,20 +50,20 @@ class ResidentesViewSet(viewsets.ModelViewSet):
             return Residentes.objects.none()
         
         # Administradores pueden ver todos los residentes
-        if self.request.user.is_superuser or (self.request.user.rol and self.request.user.rol.nombre == 'Administrador'):
+        if self.request.user.is_superuser:
             return Residentes.objects.all()
         
-        # Empleados pueden ver todos los residentes
+        # Si tiene rol de administrador
+        if self.request.user.rol and self.request.user.rol.nombre == 'Administrador':
+            return Residentes.objects.all()
+        
+        # Empleados administradores pueden ver todos los residentes
         empleado = Empleado.objects.filter(usuario=self.request.user).first()
         if empleado and empleado.cargo.lower() == "administrador":
             return Residentes.objects.all()
         
-        # Residentes solo pueden ver su propia información
-        residente = Residentes.objects.filter(usuario=self.request.user).first()
-        if residente:
-            return Residentes.objects.filter(id=residente.id)
-        
-        return Residentes.objects.none()
+        # Para cualquier otro usuario autenticado, mostrar todos (temporal)
+        return Residentes.objects.all()
     
     def perform_create(self, serializer):
         """Validaciones adicionales al crear un residente"""
@@ -78,7 +79,14 @@ class ResidentesViewSet(viewsets.ModelViewSet):
         if usuario_id and usuario_asociado_id:
             raise serializers.ValidationError("Un residente no puede tener usuario propio y usuario asociado al mismo tiempo")
         
-        serializer.save()
+        # Si se está asociando un usuario_asociado, usar el método especial
+        if usuario_asociado_id:
+            residente = serializer.save()
+            from usuarios.models import Usuario
+            usuario = Usuario.objects.get(id=usuario_asociado_id)
+            residente.asociar_usuario(usuario)
+        else:
+            serializer.save()
     
     def perform_update(self, serializer):
         """Validaciones adicionales al actualizar un residente"""
@@ -94,7 +102,14 @@ class ResidentesViewSet(viewsets.ModelViewSet):
         if usuario_id and usuario_asociado_id:
             raise serializers.ValidationError("Un residente no puede tener usuario propio y usuario asociado al mismo tiempo")
         
-        serializer.save()
+        # Si se está asociando un usuario_asociado, usar el método especial
+        instance = serializer.instance
+        if usuario_asociado_id and not instance.usuario_asociado:
+            from usuarios.models import Usuario
+            usuario = Usuario.objects.get(id=usuario_asociado_id)
+            instance.asociar_usuario(usuario)
+        else:
+            serializer.save()
     
     def perform_destroy(self, instance):
         """Manejar la eliminación de un residente"""
@@ -241,3 +256,23 @@ class ReclamoViewSet(viewsets.ModelViewSet):
         residente = Residentes.objects.filter(usuario=self.request.user).first()
         if residente:
             serializer.save(residente=residente)
+
+# ViewSet específico para obtener solo usuarios con rol de residente (para selección de propietarios)
+class UsuariosResidentesViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet que devuelve solo usuarios con rol de 'residente' para selección de propietarios
+    """
+    queryset = Usuario.objects.none()  # Se sobrescribe en get_queryset()
+    serializer_class = UsuarioResidenteSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Solo usuarios con rol de 'residente'"""
+        if not self.request.user or not self.request.user.is_authenticated:
+            return Usuario.objects.none()
+        
+        # Filtrar solo usuarios con rol de 'residente'
+        return Usuario.objects.filter(
+            rol__nombre__iexact='residente',
+            is_active=True
+        ).select_related('rol')
