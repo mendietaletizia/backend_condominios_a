@@ -67,6 +67,31 @@ class CuotaUnidadSerializer(serializers.ModelSerializer):
             'observaciones', 'residente_nombre', 'saldo_pendiente', 'dias_vencido'
         ]
 
+    def get_residente_nombre(self, obj):
+        """Obtener el nombre del residente principal de la unidad"""
+        try:
+            # Buscar el residente principal (propietario) de la unidad
+            relacion = obj.unidad.residentesunidad_set.filter(
+                rol_en_unidad='propietario', 
+                estado=True
+            ).first()
+            if relacion and relacion.id_residente and relacion.id_residente.persona:
+                return f"{relacion.id_residente.persona.nombre} {relacion.id_residente.persona.apellido}"
+            return "Sin residente"
+        except Exception:
+            return "Sin residente"
+
+    def get_saldo_pendiente(self, obj):
+        """Calcular el saldo pendiente de la cuota"""
+        return obj.calcular_saldo_pendiente()
+
+    def get_dias_vencido(self, obj):
+        """Calcular los días vencidos si la cuota está vencida"""
+        from django.utils import timezone
+        if obj.estado == 'vencida' and obj.fecha_limite:
+            return (timezone.now().date() - obj.fecha_limite).days
+        return 0
+
 class CuotaUnidadUpdateSerializer(serializers.ModelSerializer):
     """Serializer específico para actualizar cuotas por unidad"""
     
