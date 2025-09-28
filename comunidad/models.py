@@ -37,7 +37,6 @@ class ResidentesUnidad(models.Model):
         ('residente', 'Residente'),
         ('inquilino', 'Inquilino'),
         ('propietario', 'Propietario'),
-        ('familiar', 'Familiar'),
     ]
     
     id = models.AutoField(primary_key=True)
@@ -82,6 +81,7 @@ class Notificacion(models.Model):
         ('urgente', 'Urgente'),
     ], default='media')
     enviar_a_todos = models.BooleanField(default=False)
+    destinatarios = models.JSONField(default=dict, blank=True, help_text="Destinatarios específicos: {residentes: true, empleados: false, seguridad: true}")
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     
     class Meta:

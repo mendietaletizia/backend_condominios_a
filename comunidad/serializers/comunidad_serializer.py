@@ -260,9 +260,69 @@ class EventoSerializer(serializers.ModelSerializer):
         return evento
 
 class NotificacionSerializer(serializers.ModelSerializer):
+    destinatarios = serializers.JSONField(default=dict, required=False, allow_null=True)
+    tipo = serializers.CharField(max_length=50, required=False)
+    
     class Meta:
         model = Notificacion
         fields = '__all__'
+        extra_kwargs = {
+            'fecha': {'required': False},
+            'prioridad': {'required': False},
+            'enviar_a_todos': {'required': False},
+            'fecha_creacion': {'read_only': True}
+        }
+    
+    def create(self, validated_data):
+        # Asegurar que destinatarios tenga un valor por defecto
+        destinatarios = validated_data.get('destinatarios', {})
+        if not destinatarios:
+            destinatarios = {'residentes': True, 'empleados': False, 'seguridad': False}
+        validated_data['destinatarios'] = destinatarios
+        
+        # Manejar fecha si no se proporciona
+        if 'fecha' not in validated_data or not validated_data['fecha']:
+            from django.utils import timezone
+            validated_data['fecha'] = timezone.now()
+            
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        print(f"Serializer update - instance: {instance}")
+        print(f"Serializer update - validated_data: {validated_data}")
+        
+        # Manejar tipo - asegurar que sea string
+        if 'tipo' in validated_data:
+            if isinstance(validated_data['tipo'], list):
+                validated_data['tipo'] = validated_data['tipo'][0] if validated_data['tipo'] else 'comunicado'
+            elif not validated_data['tipo']:
+                validated_data['tipo'] = 'comunicado'
+        
+        # Asegurar que destinatarios tenga un valor por defecto
+        destinatarios = validated_data.get('destinatarios', instance.destinatarios)
+        if not destinatarios:
+            destinatarios = {'residentes': True, 'empleados': False, 'seguridad': False}
+        validated_data['destinatarios'] = destinatarios
+        
+        # Manejar fecha - si es inválida o vacía, usar la fecha actual
+        if 'fecha' in validated_data:
+            if not validated_data['fecha']:
+                del validated_data['fecha']
+            else:
+                # Validar que la fecha sea válida
+                try:
+                    from django.utils.dateparse import parse_datetime
+                    if isinstance(validated_data['fecha'], str):
+                        parsed_date = parse_datetime(validated_data['fecha'])
+                        if parsed_date:
+                            validated_data['fecha'] = parsed_date
+                        else:
+                            del validated_data['fecha']
+                except:
+                    del validated_data['fecha']
+            
+        print(f"Serializer update - final validated_data: {validated_data}")
+        return super().update(instance, validated_data)
 
 class NotificacionResidenteSerializer(serializers.ModelSerializer):
     class Meta:

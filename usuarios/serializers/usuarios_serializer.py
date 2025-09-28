@@ -67,22 +67,26 @@ class ResidentesSerializer(serializers.ModelSerializer):
         ]
     
     def get_mascotas_info(self, obj):
-        from comunidad.models import Mascota
-        mascotas = Mascota.objects.filter(residente=obj.id, activo=True)
-        return [
-            {
-                'id': mascota.id,
-                'nombre': mascota.nombre,
-                'tipo': mascota.tipo,
-                'raza': mascota.raza,
-                'color': mascota.color,
-                'fecha_nacimiento': mascota.fecha_nacimiento,
-                'observaciones': mascota.observaciones,
-                'unidad_id': mascota.unidad.id if mascota.unidad else None,
-                'numero_casa': mascota.unidad.numero_casa if mascota.unidad else None
-            }
-            for mascota in mascotas
-        ]
+        try:
+            from comunidad.models import Mascota
+            mascotas = Mascota.objects.filter(residente=obj.id, activo=True)
+            return [
+                {
+                    'id': mascota.id,
+                    'nombre': mascota.nombre,
+                    'tipo': mascota.tipo,
+                    'raza': mascota.raza,
+                    'color': mascota.color,
+                    'fecha_nacimiento': mascota.fecha_nacimiento,
+                    'observaciones': mascota.observaciones,
+                    'unidad_id': mascota.unidad.id if mascota.unidad else None,
+                    'numero_casa': mascota.unidad.numero_casa if mascota.unidad else None
+                }
+                for mascota in mascotas
+            ]
+        except Exception as e:
+            # Si hay error, retornar lista vacía
+            return []
 
 # Roles serializer
 class RolesSerializer(serializers.ModelSerializer):

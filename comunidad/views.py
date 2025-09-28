@@ -122,6 +122,28 @@ class NotificacionViewSet(viewsets.ModelViewSet):
     from rest_framework.decorators import action
     from rest_framework.response import Response
 
+    def update(self, request, *args, **kwargs):
+        """Override update method to add logging"""
+        print(f"Update request data: {request.data}")
+        print(f"Update request user: {request.user}")
+        print(f"Update kwargs: {kwargs}")
+        
+        # Obtener la instancia
+        instance = self.get_object()
+        print(f"Update instance: {instance}")
+        
+        # Crear serializer con datos
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        print(f"Serializer created with data: {serializer.initial_data}")
+        
+        if serializer.is_valid():
+            print(f"Serializer is valid, validated_data: {serializer.validated_data}")
+            serializer.save()
+            return Response(serializer.data)
+        else:
+            print(f"Serializer validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=400)
+
     @action(detail=False, methods=['post'])
     def broadcast(self, request):
         """Crear un comunicado y asignarlo a todos los residentes."""
@@ -129,17 +151,20 @@ class NotificacionViewSet(viewsets.ModelViewSet):
         contenido = request.data.get('contenido')
         tipo = request.data.get('tipo') or 'Comunicado'
         fecha = request.data.get('fecha') or timezone.now()
+        destinatarios = request.data.get('destinatarios', {})
 
         if not titulo:
-            return self.Response({'error': 'El título es requerido'}, status=400)
+            return Response({'error': 'El título es requerido'}, status=400)
         if not contenido:
-            return self.Response({'error': 'El contenido es requerido'}, status=400)
+            return Response({'error': 'El contenido es requerido'}, status=400)
 
+        # Crear la notificación con destinatarios
         notif = Notificacion.objects.create(
             titulo=titulo,
             contenido=contenido,
             fecha=fecha,
             tipo=tipo,
+            destinatarios=destinatarios
         )
 
         # Crear NotificacionResidente para todos los residentes activos
@@ -153,7 +178,7 @@ class NotificacionViewSet(viewsets.ModelViewSet):
             NotificacionResidente.objects.bulk_create(bulk)
             created = len(bulk)
 
-        return self.Response({'detail': 'Comunicado enviado', 'notificacion_id': notif.id, 'asignados': created}, status=201)
+        return Response({'detail': 'Comunicado enviado', 'notificacion_id': notif.id, 'asignados': created}, status=201)
 
 class NotificacionResidenteViewSet(viewsets.ModelViewSet):
     queryset = NotificacionResidente.objects.all()
