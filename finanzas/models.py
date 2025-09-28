@@ -44,13 +44,28 @@ class CuotaUnidad(models.Model):
         ('pendiente', 'Pendiente'),
         ('pagada', 'Pagada'),
         ('vencida', 'Vencida'),
-        ('parcial', 'Pago Parcial')
+        ('parcial', 'Pago Parcial'),
+        ('procesando', 'Procesando Pago'),
+        ('fallido', 'Pago Fallido')
     ], default='pendiente')
     monto_pagado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     fecha_pago = models.DateField(null=True, blank=True)
     observaciones = models.TextField(blank=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    # Campos para integración con pasarela de pago
+    payment_id = models.CharField(max_length=100, blank=True, null=True, help_text="ID del pago en la pasarela")
+    payment_url = models.URLField(blank=True, null=True, help_text="URL de pago generada por la pasarela")
+    payment_status = models.CharField(max_length=20, choices=[
+        ('pending', 'Pendiente'),
+        ('processing', 'Procesando'),
+        ('completed', 'Completado'),
+        ('failed', 'Fallido'),
+        ('cancelled', 'Cancelado')
+    ], default='pending', help_text="Estado del pago en la pasarela")
+    payment_method = models.CharField(max_length=50, blank=True, null=True, help_text="Método de pago usado")
+    payment_reference = models.CharField(max_length=100, blank=True, null=True, help_text="Referencia del pago")
 
     class Meta:
         verbose_name = "Cuota por Unidad"

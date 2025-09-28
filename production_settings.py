@@ -122,11 +122,11 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 
-# Configuración de rate limiting más restrictiva
-REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
-    'anon': '50/day',
-    'user': '500/hour'
-}
+# Configuración de rate limiting más restrictiva - DESHABILITADO TEMPORALMENTE
+# REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+#     'anon': '50/day',
+#     'user': '500/hour'
+# }
 
 # Configuración de CORS para producción
 CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')

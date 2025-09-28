@@ -262,14 +262,15 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/day',
-        'user': '1000/day'
-    },
+    # THROTTLING DESHABILITADO PARA DESARROLLO
+    # 'DEFAULT_THROTTLE_CLASSES': [
+    #     'rest_framework.throttling.AnonRateThrottle',
+    #     'rest_framework.throttling.UserRateThrottle'
+    # ],
+    # 'DEFAULT_THROTTLE_RATES': {
+    #     'anon': '100/day',
+    #     'user': '1000/day'
+    # },
     'EXCEPTION_HANDLER': 'backend_condominio_a.exceptions.custom_exception_handler'
 }
 
@@ -314,6 +315,6 @@ EMAIL_USE_TLS = config('EMAIL_USE_TLS', cast=bool, default=True)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 
-# Configuración de rate limiting
-if not DEBUG:
-    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['user'] = '500/hour'
+# Configuración de rate limiting - DESHABILITADO PARA DESARROLLO
+# if not DEBUG:
+#     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['user'] = '500/hour'
