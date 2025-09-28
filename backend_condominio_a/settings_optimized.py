@@ -90,7 +90,7 @@ LOGGING = {
 # Crear directorio de logs si no existe
 os.makedirs(BASE_DIR / 'logs', exist_ok=True)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,0.0.0.0').split(',')
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,0.0.0.0,192.168.0.15').split(',')
 
 # Configuración de seguridad para producción
 if not DEBUG:
@@ -277,12 +277,12 @@ REST_FRAMEWORK = {
 # Incluir puertos comunes de Vite (5173/4173) por defecto para desarrollo
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:5173'
+    default='http://localhost:5173,http://192.168.0.15:5173,http://localhost:3000,http://192.168.0.15:3000'
 ).split(',')
 
 CORS_ALLOW_CREDENTIALS = True
 
-CORS_ALLOW_ALL_ORIGINS = False  # Desactivado por seguridad
+CORS_ALLOW_ALL_ORIGINS = True  # Habilitado para desarrollo móvil
 
 CORS_ALLOW_HEADERS = [
     'accept',

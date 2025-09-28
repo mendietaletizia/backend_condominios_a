@@ -116,34 +116,11 @@ class ReservaViewSet(viewsets.ModelViewSet):
         except Exception:
             fecha_evento = timezone.now()
 
-        # Obtener información del residente
-        residente_nombre = "Residente"
-        residente_ci = ""
-        if reserva.residente and reserva.residente.persona:
-            residente_nombre = reserva.residente.persona.nombre
-            residente_ci = reserva.residente.persona.ci
+        titulo = f"Reserva confirmada - {reserva.area.nombre}"
+        descripcion = f"Evento por reserva del área {reserva.area.nombre} de {reserva.hora_inicio} a {reserva.hora_fin}. Residente ID: {reserva.residente_id}."
+        Evento.objects.create(titulo=titulo, descripcion=descripcion, fecha=fecha_evento, estado=True)
 
-        titulo = f"Reserva: {reserva.area.nombre}"
-        descripcion = f"El área {reserva.area.nombre} estará ocupada el {reserva.fecha} de {reserva.hora_inicio} a {reserva.hora_fin} por {residente_nombre} (CI: {residente_ci})."
-        
-        if reserva.motivo:
-            descripcion += f" Motivo: {reserva.motivo}"
-        
-        # Crear el evento
-        evento = Evento.objects.create(
-            titulo=titulo, 
-            descripcion=descripcion, 
-            fecha=fecha_evento, 
-            estado=True
-        )
-        
-        # Asociar el área común al evento
-        evento.areas.add(reserva.area)
-
-        return Response({
-            'detail': 'Reserva confirmada y evento creado', 
-            'evento_id': evento.id
-        }, status=200)
+        return Response({'detail': 'Reserva confirmada y evento creado'}, status=200)
 
     @action(detail=True, methods=['post'])
     def cancelar(self, request, pk=None):
