@@ -1,16 +1,26 @@
 from rest_framework import viewsets, permissions, serializers
+from rest_framework.decorators import action
 from usuarios.models import (
     Usuario, Persona, Roles, Permiso, RolPermiso, Empleado,
-    Vehiculo, AccesoVehicular, Visita, Invitado, Reclamo, Residentes
+    Vehiculo, AccesoVehicular, Visita, Invitado, Reclamo, Residentes,
+    TipoTarea, TareaEmpleado, ComentarioTarea, EvaluacionTarea
 )
 from usuarios.serializers.usuarios_serializer import (
     UsuarioSerializer, PersonaSerializer, RolesSerializer,
     PermisoSerializer, RolPermisoSerializer, EmpleadoSerializer,
     VehiculoSerializer, AccesoVehicularSerializer, VisitaSerializer,
     InvitadoSerializer, ReclamoSerializer, ResidentesSerializer,
-    UsuarioResidenteSerializer
+    UsuarioResidenteSerializer, TipoTareaSerializer, TareaEmpleadoSerializer,
+    ComentarioTareaSerializer, EvaluacionTareaSerializer, ResumenTareasSerializer,
+    EstadisticasTareasSerializer, ResumenEmpleadoSerializer
 )
 from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from rest_framework.response import Response
+from django.db.models import Count, Sum, Q, F, Avg
+from datetime import datetime, timedelta
+from decimal import Decimal
+from django.utils import timezone
 
 
 # Permiso personalizado para acceso de administrador
@@ -232,7 +242,247 @@ class VisitaViewSet(viewsets.ModelViewSet):
 class InvitadoViewSet(viewsets.ModelViewSet):
     queryset = Invitado.objects.all()
     serializer_class = InvitadoSerializer
-    permission_classes = [RolPermisoPermission]
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Invitado.objects.all()
+        user = self.request.user
+
+        # Scoping: admin/superuser/empleado administrador ve todos, residente ve los propios
+        is_admin = False
+        if user and user.is_authenticated:
+            if user.is_superuser:
+                is_admin = True
+            elif getattr(user, 'rol', None) and user.rol and user.rol.nombre == 'Administrador':
+                is_admin = True
+            else:
+                empleado = Empleado.objects.filter(usuario=user).first()
+                if empleado and empleado.cargo.lower() == 'administrador':
+                    is_admin = True
+
+        if not is_admin:
+            residente = Residentes.objects.filter(usuario=user).first()
+            if residente:
+                qs = qs.filter(residente=residente)
+            else:
+                qs = Invitado.objects.none()
+
+        # Filtros
+        residente_id = self.request.query_params.get('residente_id')
+        if residente_id:
+            qs = qs.filter(residente_id=residente_id)
+
+        tipo = self.request.query_params.get('tipo')
+        if tipo in ['casual', 'evento']:
+            qs = qs.filter(tipo=tipo)
+
+        evento_id = self.request.query_params.get('evento_id')
+        if evento_id:
+            qs = qs.filter(evento_id=evento_id)
+
+        activo = self.request.query_params.get('activo')
+        if activo is not None:
+            qs = qs.filter(activo=activo.lower() == 'true')
+
+        return qs.order_by('-creado_en')
+
+    def perform_create(self, serializer):
+        # Asegurar residente por usuario autenticado si no viene en payload
+        residente = None
+        try:
+            residente = Residentes.objects.filter(usuario=self.request.user).first()
+        except Exception:
+            pass
+        if residente and not serializer.validated_data.get('residente'):
+            serializer.save(residente=residente)
+        else:
+            serializer.save()
+
+    @action(detail=False, methods=['get'])
+    def activos(self, request):
+        """Listar invitados activos (fecha_fin nula o futura y activo=True)"""
+        ahora = timezone.now()
+        qs = self.get_queryset().filter(
+            activo=True
+        ).filter(
+            Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=ahora)
+        )
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def por_evento(self, request):
+        evento_id = request.query_params.get('evento_id')
+        if not evento_id:
+            return Response({'error': 'Debe proporcionar evento_id'}, status=status.HTTP_400_BAD_REQUEST)
+        qs = self.get_queryset().filter(tipo='evento', evento_id=evento_id)
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def check_in(self, request, pk=None):
+        """Registrar entrada del invitado. Solo Admin o Seguridad/Portero."""
+        invitado = self.get_object()
+
+        # Permisos: admin/superuser o empleado con cargo seguridad/portero/administrador
+        user = request.user
+        permitido = False
+        if user.is_superuser or (getattr(user, 'rol', None) and user.rol and user.rol.nombre == 'Administrador'):
+            permitido = True
+        else:
+            empleado = Empleado.objects.filter(usuario=user).first()
+            if empleado and empleado.cargo.lower() in ['seguridad', 'portero', 'administrador']:
+                permitido = True
+        if not permitido:
+            return Response({'error': 'No autorizado'}, status=status.HTTP_403_FORBIDDEN)
+
+        if invitado.check_in_at is not None:
+            return Response({'error': 'Ya tiene check-in registrado'}, status=status.HTTP_400_BAD_REQUEST)
+
+        ahora = timezone.now()
+        invitado.check_in_at = ahora
+        invitado.check_in_by = user
+        invitado.save(update_fields=['check_in_at', 'check_in_by', 'actualizado_en'])
+        return Response(self.get_serializer(invitado).data)
+
+    @action(detail=True, methods=['post'])
+    def check_out(self, request, pk=None):
+        """Registrar salida del invitado. Solo Admin o Seguridad/Portero."""
+        invitado = self.get_object()
+
+        user = request.user
+        permitido = False
+        if user.is_superuser or (getattr(user, 'rol', None) and user.rol and user.rol.nombre == 'Administrador'):
+            permitido = True
+        else:
+            empleado = Empleado.objects.filter(usuario=user).first()
+            if empleado and empleado.cargo.lower() in ['seguridad', 'portero', 'administrador']:
+                permitido = True
+        if not permitido:
+            return Response({'error': 'No autorizado'}, status=status.HTTP_403_FORBIDDEN)
+
+        if invitado.check_in_at is None:
+            return Response({'error': 'No tiene check-in registrado'}, status=status.HTTP_400_BAD_REQUEST)
+        if invitado.check_out_at is not None:
+            return Response({'error': 'Ya tiene check-out registrado'}, status=status.HTTP_400_BAD_REQUEST)
+
+        ahora = timezone.now()
+        invitado.check_out_at = ahora
+        invitado.check_out_by = user
+        invitado.save(update_fields=['check_out_at', 'check_out_by', 'actualizado_en'])
+        return Response(self.get_serializer(invitado).data)
+
+    @action(detail=False, methods=['get'])
+    def en_condominio(self, request):
+        """Lista y conteo de invitados con check-in sin check-out. Scoping: Admin/Security todos; Residente solo propios."""
+        qs = self.get_queryset().filter(check_in_at__isnull=False, check_out_at__isnull=True)
+        conteo = qs.count()
+        serializer = self.get_serializer(qs.order_by('check_in_at'), many=True)
+        return Response({'conteo': conteo, 'invitados': serializer.data})
+
+    @action(detail=False, methods=['get'], url_path='seguridad/hoy')
+    def seguridad_hoy(self, request):
+        """Invitados activos del día para seguridad. Admin y empleados de seguridad ven todos; residentes ven propios."""
+        ahora = timezone.now()
+        inicio = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+        fin = ahora.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        user = request.user
+        qs = Invitado.objects.filter(
+            activo=True,
+            fecha_inicio__lte=fin
+        ).filter(
+            Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=inicio)
+        )
+
+        is_admin = False
+        if user and user.is_authenticated:
+            if user.is_superuser or (getattr(user, 'rol', None) and user.rol and user.rol.nombre == 'Administrador'):
+                is_admin = True
+        if not is_admin:
+            empleado = Empleado.objects.filter(usuario=user).first()
+            if empleado and empleado.cargo.lower() in ['administrador', 'seguridad', 'portero']:
+                is_admin = True
+
+        if not is_admin:
+            residente = Residentes.objects.filter(usuario=user).first()
+            if residente:
+                qs = qs.filter(residente=residente)
+            else:
+                qs = Invitado.objects.none()
+
+        serializer = self.get_serializer(qs.order_by('fecha_inicio'), many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='seguridad/resumen')
+    def seguridad_resumen(self, request):
+        """Resumen del día para portería: totales y por tipo."""
+        ahora = timezone.now()
+        inicio = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+        fin = ahora.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        # Base queryset similar a seguridad_hoy
+        user = request.user
+        qs = Invitado.objects.filter(
+            activo=True,
+            fecha_inicio__lte=fin
+        ).filter(
+            Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=inicio)
+        )
+
+        is_admin = False
+        if user and user.is_authenticated:
+            if user.is_superuser or (getattr(user, 'rol', None) and user.rol and user.rol.nombre == 'Administrador'):
+                is_admin = True
+        if not is_admin:
+            empleado = Empleado.objects.filter(usuario=user).first()
+            if empleado and empleado.cargo.lower() in ['administrador', 'seguridad', 'portero']:
+                is_admin = True
+
+        if not is_admin:
+            residente = Residentes.objects.filter(usuario=user).first()
+            if residente:
+                qs = qs.filter(residente=residente)
+            else:
+                qs = Invitado.objects.none()
+
+        total = qs.count()
+        total_evento = qs.filter(tipo='evento').count()
+        total_casual = qs.filter(tipo='casual').count()
+
+        # Próximos 10 ingresos ordenados
+        proximos = qs.order_by('fecha_inicio')[:10]
+        data_proximos = [
+            {
+                'id': inv.id,
+                'nombre': inv.nombre,
+                'ci': inv.ci,
+                'tipo': inv.tipo,
+                'tipo_display': inv.get_tipo_display(),
+                'vehiculo_placa': inv.vehiculo_placa,
+                'residente': {
+                    'id': inv.residente.id,
+                    'nombre': inv.residente.persona.nombre,
+                },
+                'evento': {
+                    'id': inv.evento.id,
+                    'titulo': getattr(inv.evento, 'titulo', None)
+                } if inv.evento else None,
+                'fecha_inicio': inv.fecha_inicio,
+                'fecha_fin': inv.fecha_fin,
+            }
+            for inv in proximos
+        ]
+
+        return Response({
+            'fecha': ahora.date(),
+            'totales': {
+                'total': total,
+                'evento': total_evento,
+                'casual': total_casual,
+            },
+            'proximos': data_proximos,
+        })
 
 class ReclamoViewSet(viewsets.ModelViewSet):
     queryset = Reclamo.objects.all()
@@ -278,16 +528,6 @@ class UsuariosResidentesViewSet(viewsets.ReadOnlyModelViewSet):
         ).select_related('rol')
 
 # CU23: Asignación de Tareas para Empleados - Nuevos ViewSets
-from rest_framework import status
-from django.db.models import Count, Sum, Q, F, Avg
-from datetime import datetime, timedelta
-from decimal import Decimal
-from usuarios.models import TipoTarea, TareaEmpleado, ComentarioTarea, EvaluacionTarea
-from usuarios.serializers.usuarios_serializer import (
-    TipoTareaSerializer, TareaEmpleadoSerializer, ComentarioTareaSerializer,
-    EvaluacionTareaSerializer, ResumenTareasSerializer, EstadisticasTareasSerializer,
-    ResumenEmpleadoSerializer
-)
 
 
 class TipoTareaViewSet(viewsets.ModelViewSet):

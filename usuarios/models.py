@@ -163,10 +163,27 @@ class Invitado(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=100)
     ci = models.CharField(max_length=20)
-    evento = models.ForeignKey('comunidad.Evento', on_delete=models.CASCADE)
+    residente = models.ForeignKey(Residentes, on_delete=models.CASCADE, related_name='invitados')
+    TIPO_INVITADO_CHOICES = [
+        ('casual', 'Visita Casual'),
+        ('evento', 'Invitado Evento'),
+    ]
+    tipo = models.CharField(max_length=10, choices=TIPO_INVITADO_CHOICES, default='casual')
+    evento = models.ForeignKey('comunidad.Evento', on_delete=models.CASCADE, null=True, blank=True)
+    vehiculo_placa = models.CharField(max_length=10, null=True, blank=True)
+    fecha_inicio = models.DateTimeField()
+    fecha_fin = models.DateTimeField(null=True, blank=True)
+    activo = models.BooleanField(default=True)
+    # Control de acceso humano (portería)
+    check_in_at = models.DateTimeField(null=True, blank=True)
+    check_in_by = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='invitados_checkin')
+    check_out_at = models.DateTimeField(null=True, blank=True)
+    check_out_by = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='invitados_checkout')
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Invitado: {self.nombre}"
+        return f"Invitado: {self.nombre} ({self.get_tipo_display()})"
 
 class Reclamo(models.Model):
     id = models.AutoField(primary_key=True)

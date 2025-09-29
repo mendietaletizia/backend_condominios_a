@@ -243,9 +243,47 @@ class VisitaSerializer(serializers.ModelSerializer):
 
 # Invitado serializer
 class InvitadoSerializer(serializers.ModelSerializer):
+    residente_info = serializers.SerializerMethodField()
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    check_in_by_username = serializers.CharField(source='check_in_by.username', read_only=True)
+    check_out_by_username = serializers.CharField(source='check_out_by.username', read_only=True)
+
     class Meta:
         model = Invitado
         fields = '__all__'
+
+    def get_residente_info(self, obj):
+        return {
+            'id': obj.residente.id,
+            'nombre': obj.residente.persona.nombre,
+        }
+
+    def validate(self, attrs):
+        tipo = attrs.get('tipo') or (self.instance.tipo if self.instance else 'casual')
+        evento = attrs.get('evento') if 'evento' in attrs else (self.instance.evento if self.instance else None)
+        fecha_inicio = attrs.get('fecha_inicio') if 'fecha_inicio' in attrs else (self.instance.fecha_inicio if self.instance else None)
+        fecha_fin = attrs.get('fecha_fin') if 'fecha_fin' in attrs else (self.instance.fecha_fin if self.instance else None)
+
+        if tipo == 'evento' and not evento:
+            raise serializers.ValidationError('Invitado de tipo evento requiere campo evento')
+
+        if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
+            raise serializers.ValidationError('fecha_fin no puede ser anterior a fecha_inicio')
+
+        return attrs
+
+    def create(self, validated_data):
+        # Si no viene residente explícito, asignar por usuario autenticado si es residente
+        request = self.context.get('request')
+        if request and not validated_data.get('residente'):
+            try:
+                from usuarios.models import Residentes
+                residente = Residentes.objects.filter(usuario=request.user).first()
+                if residente:
+                    validated_data['residente'] = residente
+            except Exception:
+                pass
+        return super().create(validated_data)
 
 # Reclamo serializer
 class ReclamoSerializer(serializers.ModelSerializer):

@@ -12,8 +12,7 @@ import logging
 from .models import CuotaMensual, CuotaUnidad, PagoCuota, Ingreso, ResumenIngresos
 from .serializers.finanzas_serializer import (
     CuotaMensualSerializer, CuotaUnidadSerializer, CuotaUnidadUpdateSerializer, PagoCuotaSerializer,
-    ResumenCuotasSerializer, MorososSerializer, IngresoSerializer, ResumenIngresosSerializer,
-    EstadisticasIngresosSerializer
+    ResumenCuotasSerializer, MorososSerializer, IngresoSerializer, ResumenIngresosSerializer
 )
 from comunidad.models import Unidad
 from comunidad.services import NotificacionService
@@ -766,109 +765,7 @@ class IngresoViewSet(viewsets.ModelViewSet):
         
         return queryset
     
-    @action(detail=False, methods=['get'])
-    def estadisticas(self, request):
-        """Obtener estadísticas de ingresos"""
-        from django.db.models import Sum, Count
-        from datetime import datetime, timedelta
-        
-        # Parámetros de fecha
-        año_actual = datetime.now().year
-        mes_actual = datetime.now().month
-        
-        # Totales del mes actual
-        ingresos_mes = self.get_queryset().filter(
-            fecha_ingreso__year=año_actual,
-            fecha_ingreso__month=mes_actual,
-            estado='confirmado'
-        )
-        total_ingresos_mes = ingresos_mes.aggregate(total=Sum('monto'))['total'] or 0
-        
-        # Totales del año actual
-        ingresos_año = self.get_queryset().filter(
-            fecha_ingreso__year=año_actual,
-            estado='confirmado'
-        )
-        total_ingresos_año = ingresos_año.aggregate(total=Sum('monto'))['total'] or 0
-        
-        # Promedio mensual del año
-        meses_transcurridos = mes_actual
-        promedio_mensual = total_ingresos_año / meses_transcurridos if meses_transcurridos > 0 else 0
-        
-        # Crecimiento mensual (comparar con mes anterior)
-        mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
-        año_anterior = año_actual if mes_actual > 1 else año_actual - 1
-        
-        ingresos_mes_anterior = self.get_queryset().filter(
-            fecha_ingreso__year=año_anterior,
-            fecha_ingreso__month=mes_anterior,
-            estado='confirmado'
-        ).aggregate(total=Sum('monto'))['total'] or 0
-        
-        crecimiento_mensual = 0
-        if ingresos_mes_anterior > 0:
-            crecimiento_mensual = ((total_ingresos_mes - ingresos_mes_anterior) / ingresos_mes_anterior) * 100
-        
-        # Crecimiento anual (comparar con año anterior)
-        ingresos_año_anterior = self.get_queryset().filter(
-            fecha_ingreso__year=año_actual - 1,
-            estado='confirmado'
-        ).aggregate(total=Sum('monto'))['total'] or 0
-        
-        crecimiento_anual = 0
-        if ingresos_año_anterior > 0:
-            crecimiento_anual = ((total_ingresos_año - ingresos_año_anterior) / ingresos_año_anterior) * 100
-        
-        # Ingresos por tipo
-        ingresos_por_tipo = {}
-        for tipo, _ in Ingreso.TIPO_INGRESO_CHOICES:
-            total_tipo = ingresos_año.filter(tipo_ingreso=tipo).aggregate(total=Sum('monto'))['total'] or 0
-            ingresos_por_tipo[tipo] = float(total_tipo)
-        
-        # Tendencia mensual (últimos 12 meses)
-        tendencia_mensual = []
-        for i in range(12):
-            fecha = datetime.now() - timedelta(days=30*i)
-            total_mes = self.get_queryset().filter(
-                fecha_ingreso__year=fecha.year,
-                fecha_ingreso__month=fecha.month,
-                estado='confirmado'
-            ).aggregate(total=Sum('monto'))['total'] or 0
-            
-            tendencia_mensual.append({
-                'mes': fecha.strftime('%Y-%m'),
-                'total': float(total_mes)
-            })
-        
-        tendencia_mensual.reverse()
-        
-        # Top unidades por ingresos
-        top_unidades = self.get_queryset().filter(
-            estado='confirmado',
-            unidad_relacionada__isnull=False
-        ).values('unidad_relacionada__numero_casa').annotate(
-            total=Sum('monto')
-        ).order_by('-total')[:5]
-        
-        estadisticas = {
-            'total_ingresos_mes': float(total_ingresos_mes),
-            'total_ingresos_año': float(total_ingresos_año),
-            'promedio_mensual': float(promedio_mensual),
-            'crecimiento_mensual': round(crecimiento_mensual, 2),
-            'crecimiento_anual': round(crecimiento_anual, 2),
-            'ingresos_por_tipo': ingresos_por_tipo,
-            'tendencia_mensual': tendencia_mensual,
-            'top_unidades_ingresos': [
-                {
-                    'unidad': item['unidad_relacionada__numero_casa'],
-                    'total': float(item['total'])
-                }
-                for item in top_unidades
-            ]
-        }
-        
-        serializer = EstadisticasIngresosSerializer(estadisticas)
-        return Response(serializer.data)
+    
     
     @action(detail=False, methods=['get'])
     def resumen_mensual(self, request):

@@ -241,13 +241,4 @@ class ResumenIngresosSerializer(serializers.ModelSerializer):
             return round((obj.total_otros / obj.total_general) * 100, 2)
         return 0
 
-class EstadisticasIngresosSerializer(serializers.Serializer):
-    """Serializer para estadísticas de ingresos"""
-    total_ingresos_mes = serializers.DecimalField(max_digits=12, decimal_places=2)
-    total_ingresos_año = serializers.DecimalField(max_digits=12, decimal_places=2)
-    promedio_mensual = serializers.DecimalField(max_digits=12, decimal_places=2)
-    crecimiento_mensual = serializers.DecimalField(max_digits=5, decimal_places=2)
-    crecimiento_anual = serializers.DecimalField(max_digits=5, decimal_places=2)
-    ingresos_por_tipo = serializers.DictField()
-    tendencia_mensual = serializers.ListField()
-    top_unidades_ingresos = serializers.ListField()
+ 

@@ -10,7 +10,7 @@ import json
 
 from usuarios.models import (
     PlacaVehiculo, PlacaInvitado, RegistroAcceso, ConfiguracionAcceso,
-    Residentes, Usuario
+    Residentes, Usuario, Empleado
 )
 from usuarios.serializers.usuarios_serializer import (
     PlacaVehiculoSerializer, PlacaInvitadoSerializer,
@@ -23,12 +23,45 @@ class PlacaVehiculoViewSet(ModelViewSet):
     serializer_class = PlacaVehiculoSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def _es_admin_o_seguridad(self, user):
+        if user.is_superuser:
+            return True
+        if getattr(user, 'rol', None) and user.rol and user.rol.nombre == 'Administrador':
+            return True
+        empleado = Empleado.objects.filter(usuario=user).first()
+        if empleado and empleado.cargo.lower() in ['administrador', 'seguridad', 'portero']:
+            return True
+        return False
+
     def get_queryset(self):
         queryset = PlacaVehiculo.objects.all()
-        residente_id = self.request.query_params.get('residente_id', None)
+
+        # Scoping por rol
+        if not self._es_admin_o_seguridad(self.request.user):
+            residente = Residentes.objects.filter(usuario=self.request.user).first()
+            if residente:
+                queryset = queryset.filter(residente=residente)
+            else:
+                return PlacaVehiculo.objects.none()
+
+        # Filtros
+        residente_id = self.request.query_params.get('residente_id')
         if residente_id:
             queryset = queryset.filter(residente_id=residente_id)
-        return queryset
+
+        unidad_id = self.request.query_params.get('unidad_id')
+        if unidad_id:
+            queryset = queryset.filter(residente__residentesunidad__id_unidad_id=unidad_id, residente__residentesunidad__estado=True)
+
+        placa = self.request.query_params.get('placa')
+        if placa:
+            queryset = queryset.filter(placa__icontains=placa)
+
+        activo = self.request.query_params.get('activo')
+        if activo is not None:
+            queryset = queryset.filter(activo=activo.lower() == 'true')
+
+        return queryset.distinct().order_by('-fecha_registro')
 
     @action(detail=False, methods=['get'])
     def por_residente(self, request):
@@ -40,9 +73,46 @@ class PlacaVehiculoViewSet(ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        placas = self.queryset.filter(residente_id=residente_id)
+        placas = self.get_queryset().filter(residente_id=residente_id)
         serializer = self.get_serializer(placas, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def por_unidad(self, request):
+        """Obtener placas activas asociadas a una unidad mediante relaciones de residentes activos."""
+        unidad_id = self.request.query_params.get('unidad_id')
+        if not unidad_id:
+            return Response({'error': 'Debe proporcionar unidad_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+        placas = self.get_queryset().filter(
+            residente__residentesunidad__id_unidad_id=unidad_id,
+            residente__residentesunidad__estado=True
+        ).distinct()
+        serializer = self.get_serializer(placas, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def resumen_unidad(self, request):
+        """Resumen de vehículos por unidad: totales, activos, últimos registrados."""
+        unidad_id = self.request.query_params.get('unidad_id')
+        if not unidad_id:
+            return Response({'error': 'Debe proporcionar unidad_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = self.get_queryset().filter(
+            residente__residentesunidad__id_unidad_id=unidad_id,
+            residente__residentesunidad__estado=True
+        ).distinct()
+
+        total = qs.count()
+        activos = qs.filter(activo=True).count()
+        ultimos = qs.order_by('-fecha_registro')[:10]
+        serializer = self.get_serializer(ultimos, many=True)
+        return Response({
+            'unidad_id': int(unidad_id),
+            'total': total,
+            'activos': activos,
+            'ultimos': serializer.data
+        })
 
 class PlacaInvitadoViewSet(ModelViewSet):
     """Gestión de placas de vehículos de invitados"""

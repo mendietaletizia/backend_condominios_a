@@ -12,6 +12,9 @@ from comunidad.serializers.comunidad_serializer import (
     NotificacionResidenteSerializer, ActaSerializer, MascotaSerializer, ReglamentoSerializer
 )
 from usuarios.models import Empleado
+from django.db.models import Q
+from usuarios.models import PlacaVehiculo
+from usuarios.models import Invitado
 
 class RolPermiso(permissions.BasePermission):
     """Solo Admin puede modificar; otros roles pueden ver"""
@@ -89,6 +92,169 @@ class UnidadViewSet(viewsets.ModelViewSet):
             
         except Exception as e:
             raise serializers.ValidationError(f"Error al eliminar unidad: {str(e)}")
+
+    @action(detail=True, methods=['get'])
+    def detalle_completo(self, request, pk=None):
+        """Devuelve la unidad con info agregada: vehiculos y invitados activos de hoy."""
+        unidad = self.get_object()
+        data = UnidadSerializer(unidad).data
+
+        # Vehículos por unidad (residentes activos)
+        vehiculos = PlacaVehiculo.objects.filter(
+            residente__residentesunidad__id_unidad=unidad,
+            residente__residentesunidad__estado=True,
+            activo=True
+        ).distinct().order_by('-fecha_registro')
+        data['vehiculos'] = [
+            {
+                'id': v.id,
+                'placa': v.placa,
+                'marca': v.marca,
+                'modelo': v.modelo,
+                'color': v.color,
+                'residente_id': v.residente.id,
+                'residente_nombre': v.residente.persona.nombre if v.residente.persona else 'Sin nombre',
+                'fecha_registro': v.fecha_registro,
+                'activo': v.activo
+            } for v in vehiculos
+        ]
+
+        # Invitados activos de hoy vinculados a residentes de la unidad
+        ahora = timezone.now()
+        inicio = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+        fin = ahora.replace(hour=23, minute=59, second=59, microsecond=999999)
+        invitados_hoy = Invitado.objects.filter(
+            residente__residentesunidad__id_unidad=unidad,
+            residente__residentesunidad__estado=True,
+            activo=True,
+            fecha_inicio__lte=fin
+        ).filter(
+            Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=inicio)
+        ).select_related('residente', 'evento').order_by('fecha_inicio')
+
+        data['invitados_hoy'] = [
+            {
+                'id': inv.id,
+                'nombre': inv.nombre,
+                'ci': inv.ci,
+                'tipo': inv.tipo,
+                'tipo_display': inv.get_tipo_display(),
+                'vehiculo_placa': inv.vehiculo_placa,
+                'residente': {
+                    'id': inv.residente.id,
+                    'nombre': inv.residente.persona.nombre if inv.residente.persona else 'Sin nombre'
+                },
+                'evento': {
+                    'id': inv.evento.id,
+                    'titulo': getattr(inv.evento, 'titulo', None)
+                } if inv.evento else None,
+                'fecha_inicio': inv.fecha_inicio,
+                'fecha_fin': inv.fecha_fin,
+                'check_in_at': inv.check_in_at,
+                'check_out_at': inv.check_out_at,
+            }
+            for inv in invitados_hoy
+        ]
+
+        return Response(data)
+
+    @action(detail=True, methods=['get'], url_path='vehiculos')
+    def vehiculos(self, request, pk=None):
+        """Lista vehículos activos asociados a la unidad por residentes activos."""
+        unidad = self.get_object()
+        vehiculos = PlacaVehiculo.objects.filter(
+            residente__residentesunidad__id_unidad=unidad,
+            residente__residentesunidad__estado=True,
+            activo=True
+        ).distinct().order_by('-fecha_registro')
+        from usuarios.serializers.usuarios_serializer import PlacaVehiculoSerializer
+        serializer = PlacaVehiculoSerializer(vehiculos, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='vehiculos')
+    def crear_vehiculo(self, request, pk=None):
+        """Crear un vehículo para un residente de esta unidad. Admin/Seguridad. Valida relación residente-unidad activa."""
+        unidad = self.get_object()
+        user = request.user
+        # permisos: admin/superuser o empleado seguridad/administrador/portero
+        permitido = False
+        if user.is_superuser or (hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Administrador'):
+            permitido = True
+        else:
+            empleado = Empleado.objects.filter(usuario=user).first()
+            if empleado and empleado.cargo.lower() in ['administrador', 'seguridad', 'portero']:
+                permitido = True
+        if not permitido:
+            return Response({'error': 'No autorizado'}, status=403)
+
+        data = request.data.copy()
+        residente_id = data.get('residente') or data.get('residente_id')
+        if not residente_id:
+            return Response({'error': 'residente es requerido'}, status=400)
+        try:
+            residente = Residentes.objects.get(pk=int(residente_id))
+        except Exception:
+            return Response({'error': 'residente inválido'}, status=400)
+
+        # Validar que el residente pertenezca a esta unidad (activo)
+        if not ResidentesUnidad.objects.filter(id_residente=residente, id_unidad=unidad, estado=True).exists():
+            return Response({'error': 'El residente no pertenece a esta unidad o no está activo'}, status=400)
+
+        from usuarios.serializers.usuarios_serializer import PlacaVehiculoSerializer
+        payload = {
+            'residente': residente.id,
+            'placa': data.get('placa'),
+            'marca': data.get('marca'),
+            'modelo': data.get('modelo'),
+            'color': data.get('color'),
+            'activo': data.get('activo', True),
+        }
+        serializer = PlacaVehiculoSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=201)
+
+    @action(detail=True, methods=['delete'], url_path='vehiculos/(?P<vehiculo_id>[^/.]+)')
+    def eliminar_vehiculo(self, request, vehiculo_id=None, pk=None):
+        """Eliminar vehículo de un residente de esta unidad. Admin/Seguridad."""
+        unidad = self.get_object()
+        user = request.user
+        permitido = False
+        if user.is_superuser or (hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Administrador'):
+            permitido = True
+        else:
+            empleado = Empleado.objects.filter(usuario=user).first()
+            if empleado and empleado.cargo.lower() in ['administrador', 'seguridad', 'portero']:
+                permitido = True
+        if not permitido:
+            return Response({'error': 'No autorizado'}, status=403)
+
+        try:
+            vehiculo = PlacaVehiculo.objects.get(pk=int(vehiculo_id))
+        except Exception:
+            return Response({'error': 'vehiculo_id inválido'}, status=400)
+
+        # Validar pertenencia a esta unidad
+        if not ResidentesUnidad.objects.filter(id_residente=vehiculo.residente, id_unidad=unidad, estado=True).exists():
+            return Response({'error': 'El vehículo no pertenece a un residente activo de esta unidad'}, status=400)
+
+        vehiculo.delete()
+        return Response(status=204)
+
+    @action(detail=True, methods=['get'], url_path='vehiculos/resumen')
+    def vehiculos_resumen(self, request, pk=None):
+        """Resumen simple de vehículos por unidad."""
+        unidad = self.get_object()
+        qs = PlacaVehiculo.objects.filter(
+            residente__residentesunidad__id_unidad=unidad,
+            residente__residentesunidad__estado=True
+        ).distinct()
+        total = qs.count()
+        activos = qs.filter(activo=True).count()
+        ultimos = qs.order_by('-fecha_registro')[:10]
+        from usuarios.serializers.usuarios_serializer import PlacaVehiculoSerializer
+        serializer = PlacaVehiculoSerializer(ultimos, many=True)
+        return Response({'total': total, 'activos': activos, 'ultimos': serializer.data})
 
 class ResidentesUnidadViewSet(viewsets.ModelViewSet):
     queryset = ResidentesUnidad.objects.all()
