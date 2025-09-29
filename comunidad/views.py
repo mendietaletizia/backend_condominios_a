@@ -158,61 +158,7 @@ class UnidadViewSet(viewsets.ModelViewSet):
 
         return Response(data)
 
-    @action(detail=True, methods=['get'], url_path='vehiculos')
-    def vehiculos(self, request, pk=None):
-        """Lista vehículos activos asociados a la unidad por residentes activos."""
-        unidad = self.get_object()
-        vehiculos = PlacaVehiculo.objects.filter(
-            residente__residentesunidad__id_unidad=unidad,
-            residente__residentesunidad__estado=True,
-            activo=True
-        ).distinct().order_by('-fecha_registro')
-        from usuarios.serializers.usuarios_serializer import PlacaVehiculoSerializer
-        serializer = PlacaVehiculoSerializer(vehiculos, many=True)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'], url_path='vehiculos')
-    def crear_vehiculo(self, request, pk=None):
-        """Crear un vehículo para un residente de esta unidad. Admin/Seguridad. Valida relación residente-unidad activa."""
-        unidad = self.get_object()
-        user = request.user
-        # permisos: admin/superuser o empleado seguridad/administrador/portero
-        permitido = False
-        if user.is_superuser or (hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Administrador'):
-            permitido = True
-        else:
-            empleado = Empleado.objects.filter(usuario=user).first()
-            if empleado and empleado.cargo.lower() in ['administrador', 'seguridad', 'portero']:
-                permitido = True
-        if not permitido:
-            return Response({'error': 'No autorizado'}, status=403)
-
-        data = request.data.copy()
-        residente_id = data.get('residente') or data.get('residente_id')
-        if not residente_id:
-            return Response({'error': 'residente es requerido'}, status=400)
-        try:
-            residente = Residentes.objects.get(pk=int(residente_id))
-        except Exception:
-            return Response({'error': 'residente inválido'}, status=400)
-
-        # Validar que el residente pertenezca a esta unidad (activo)
-        if not ResidentesUnidad.objects.filter(id_residente=residente, id_unidad=unidad, estado=True).exists():
-            return Response({'error': 'El residente no pertenece a esta unidad o no está activo'}, status=400)
-
-        from usuarios.serializers.usuarios_serializer import PlacaVehiculoSerializer
-        payload = {
-            'residente': residente.id,
-            'placa': data.get('placa'),
-            'marca': data.get('marca'),
-            'modelo': data.get('modelo'),
-            'color': data.get('color'),
-            'activo': data.get('activo', True),
-        }
-        serializer = PlacaVehiculoSerializer(data=payload)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=201)
+    # Se remueve gestión de vehículos desde unidad para separar el CU
 
     @action(detail=True, methods=['delete'], url_path='vehiculos/(?P<vehiculo_id>[^/.]+)')
     def eliminar_vehiculo(self, request, vehiculo_id=None, pk=None):

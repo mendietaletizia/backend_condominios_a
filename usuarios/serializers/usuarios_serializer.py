@@ -303,6 +303,7 @@ class ReclamoSerializer(serializers.ModelSerializer):
 # Serializers para CU14: Gestión de Acceso con IA
 class PlacaVehiculoSerializer(serializers.ModelSerializer):
     residente_info = serializers.SerializerMethodField()
+    unidad_info = serializers.SerializerMethodField()
 
     class Meta:
         model = PlacaVehiculo
@@ -314,6 +315,19 @@ class PlacaVehiculoSerializer(serializers.ModelSerializer):
             'nombre': obj.residente.persona.nombre,
             'email': obj.residente.persona.email
         }
+
+    def get_unidad_info(self, obj):
+        try:
+            from comunidad.models import ResidentesUnidad
+            rel = ResidentesUnidad.objects.filter(id_residente=obj.residente, estado=True).select_related('id_unidad').first()
+            if rel and rel.id_unidad:
+                return {
+                    'id': rel.id_unidad.id,
+                    'numero_casa': rel.id_unidad.numero_casa
+                }
+        except Exception:
+            pass
+        return None
 
 class PlacaInvitadoSerializer(serializers.ModelSerializer):
     residente_info = serializers.SerializerMethodField()
