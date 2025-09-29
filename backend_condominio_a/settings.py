@@ -169,7 +169,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_CREDENTIALS = False
 
 CORS_ALLOW_ALL_ORIGINS = True  # Habilitado para desarrollo
 
