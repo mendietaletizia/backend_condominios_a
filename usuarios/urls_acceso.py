@@ -15,13 +15,13 @@ router.register(r'configuracion', ConfiguracionAccesoViewSet, basename='configur
 
 urlpatterns = [
     # Incluir las rutas del router
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
 
     # Rutas adicionales
-    path('api/dashboard/', DashboardAccesoView.as_view(), name='dashboard-acceso'),
-    path('api/registros-acceso/registrar/', RegistroAccesoViewSet.as_view({'post': 'registrar_acceso'}), name='registrar-acceso'),
-    path('api/registros-acceso/<int:pk>/autorizar/', RegistroAccesoViewSet.as_view({'post': 'autorizar_manual'}), name='autorizar-manual'),
-    path('api/registros-acceso/<int:pk>/denegar/', RegistroAccesoViewSet.as_view({'post': 'denegar_manual'}), name='denegar-manual'),
-    path('api/placas-invitado/activas/', PlacaInvitadoViewSet.as_view({'get': 'activas'}), name='placas-invitado-activas'),
-    path('api/configuracion/probar-conexion/', ConfiguracionAccesoViewSet.as_view({'post': 'probar_conexion'}), name='probar-conexion'),
+    path('dashboard/', DashboardAccesoView.as_view(), name='dashboard-acceso'),
+    path('registros-acceso/registrar/', RegistroAccesoViewSet.as_view({'post': 'registrar_acceso'}), name='registrar-acceso'),
+    path('registros-acceso/<int:pk>/autorizar/', RegistroAccesoViewSet.as_view({'post': 'autorizar_manual'}), name='autorizar-manual'),
+    path('registros-acceso/<int:pk>/denegar/', RegistroAccesoViewSet.as_view({'post': 'denegar_manual'}), name='denegar-manual'),
+    path('placas-invitado/activas/', PlacaInvitadoViewSet.as_view({'get': 'activas'}), name='placas-invitado-activas'),
+    path('configuracion/probar-conexion/', ConfiguracionAccesoViewSet.as_view({'post': 'probar_conexion'}), name='probar-conexion'),
 ]

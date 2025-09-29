@@ -4,9 +4,14 @@ from django.shortcuts import render
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from economia.models import Gastos, Multa
+from economia.models import Gastos, Multa, ReporteFinanciero, AnalisisFinanciero, IndicadorFinanciero, DashboardFinanciero
 # from finanzas.models import Pago, Expensa  # Comentado temporalmente
-from economia.serializers.economia_serializer import GastosSerializer, MultaSerializer
+from economia.serializers.economia_serializer import (
+    GastosSerializer, MultaSerializer, ReporteFinancieroSerializer, 
+    AnalisisFinancieroSerializer, IndicadorFinancieroSerializer, 
+    DashboardFinancieroSerializer, ResumenFinancieroSerializer,
+    AnalisisMorosidadSerializer, ProyeccionFinancieraSerializer
+)
 from usuarios.models import Empleado
 from django.db.models import Sum, Count
 
@@ -170,3 +175,383 @@ class MorosidadViewSet(viewsets.ViewSet):
             'periodo_analisis': 'Últimos 12 meses',
             'mensaje': 'CU7 eliminado. Solo disponible CU22 - Gestión de Cuotas y Expensas'
         })
+
+# CU19: Reportes y Analítica
+class ReporteFinancieroViewSet(viewsets.ModelViewSet):
+    """Gestión de Reportes Financieros - CU19"""
+    queryset = ReporteFinanciero.objects.all()
+    serializer_class = ReporteFinancieroSerializer
+    permission_classes = [RolPermiso]
+    
+    def perform_create(self, serializer):
+        serializer.save(generado_por=self.request.user)
+    
+    @action(detail=False, methods=['post'])
+    def generar_reporte(self, request):
+        """Generar un nuevo reporte financiero"""
+        try:
+            data = request.data
+            reporte = ReporteFinanciero.objects.create(
+                nombre=data.get('nombre', f"Reporte {data.get('tipo_reporte', 'personalizado')}"),
+                tipo_reporte=data.get('tipo_reporte', 'personalizado'),
+                fecha_inicio=data['fecha_inicio'],
+                fecha_fin=data['fecha_fin'],
+                generado_por=request.user,
+                observaciones=data.get('observaciones', '')
+            )
+            
+            # Calcular totales
+            reporte.calcular_totales()
+            
+            serializer = self.get_serializer(reporte)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Error generando reporte: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['post'])
+    def regenerar_totales(self, request, pk=None):
+        """Regenerar totales de un reporte existente"""
+        try:
+            reporte = self.get_object()
+            reporte.calcular_totales()
+            serializer = self.get_serializer(reporte)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response(
+                {'error': f'Error regenerando totales: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class AnalisisFinancieroViewSet(viewsets.ModelViewSet):
+    """Gestión de Análisis Financieros - CU19"""
+    queryset = AnalisisFinanciero.objects.all()
+    serializer_class = AnalisisFinancieroSerializer
+    permission_classes = [RolPermiso]
+    
+    def perform_create(self, serializer):
+        serializer.save(creado_por=self.request.user)
+    
+    @action(detail=False, methods=['post'])
+    def analizar_tendencia(self, request):
+        """Realizar análisis de tendencia financiera"""
+        try:
+            data = request.data
+            periodo_inicio = data['periodo_inicio']
+            periodo_fin = data['periodo_fin']
+            
+            # Obtener datos de ingresos y gastos
+            from finanzas.models import Ingreso
+            
+            ingresos = Ingreso.objects.filter(
+                fecha_ingreso__range=[periodo_inicio, periodo_fin],
+                estado='confirmado'
+            )
+            gastos = Gastos.objects.filter(
+                fecha_hora__date__range=[periodo_inicio, periodo_fin]
+            )
+            
+            # Calcular tendencias
+            total_ingresos = sum(ing.monto for ing in ingresos)
+            total_gastos = sum(g.monto for g in gastos)
+            
+            # Análisis por mes
+            tendencia_mensual = []
+            from datetime import datetime, timedelta
+            from collections import defaultdict
+            
+            ingresos_por_mes = defaultdict(float)
+            gastos_por_mes = defaultdict(float)
+            
+            for ingreso in ingresos:
+                mes_key = ingreso.fecha_ingreso.strftime('%Y-%m')
+                ingresos_por_mes[mes_key] += float(ingreso.monto)
+            
+            for gasto in gastos:
+                mes_key = gasto.fecha_hora.strftime('%Y-%m')
+                gastos_por_mes[mes_key] += float(gasto.monto)
+            
+            # Crear análisis
+            analisis = AnalisisFinanciero.objects.create(
+                nombre=f"Análisis de Tendencia {periodo_inicio} a {periodo_fin}",
+                tipo_analisis='tendencia',
+                periodo_inicio=periodo_inicio,
+                periodo_fin=periodo_fin,
+                creado_por=request.user,
+                datos_analisis={
+                    'total_ingresos': float(total_ingresos),
+                    'total_gastos': float(total_gastos),
+                    'saldo_neto': float(total_ingresos - total_gastos),
+                    'tendencia_mensual': [
+                        {
+                            'mes': mes,
+                            'ingresos': ingresos_por_mes[mes],
+                            'gastos': gastos_por_mes[mes],
+                            'saldo': ingresos_por_mes[mes] - gastos_por_mes[mes]
+                        }
+                        for mes in sorted(set(list(ingresos_por_mes.keys()) + list(gastos_por_mes.keys())))
+                    ]
+                },
+                conclusiones=f"Análisis de tendencia financiera del {periodo_inicio} al {periodo_fin}",
+                recomendaciones="Revisar las tendencias mensuales para identificar patrones y oportunidades de mejora."
+            )
+            
+            serializer = self.get_serializer(analisis)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Error realizando análisis: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class IndicadorFinancieroViewSet(viewsets.ReadOnlyModelViewSet):
+    """Indicadores Financieros - CU19"""
+    queryset = IndicadorFinanciero.objects.all()
+    serializer_class = IndicadorFinancieroSerializer
+    permission_classes = [RolPermiso]
+    
+    @action(detail=False, methods=['get'])
+    def calcular_indicadores(self, request):
+        """Calcular indicadores financieros actuales"""
+        try:
+            from datetime import datetime, timedelta
+            from finanzas.models import Ingreso
+            
+            # Período de análisis (últimos 12 meses)
+            fecha_fin = datetime.now().date()
+            fecha_inicio = fecha_fin - timedelta(days=365)
+            
+            # Obtener datos
+            ingresos = Ingreso.objects.filter(
+                fecha_ingreso__range=[fecha_inicio, fecha_fin],
+                estado='confirmado'
+            )
+            gastos = Gastos.objects.filter(
+                fecha_hora__date__range=[fecha_inicio, fecha_fin]
+            )
+            multas = Multa.objects.filter(
+                fecha_emision__range=[fecha_inicio, fecha_fin]
+            )
+            
+            total_ingresos = sum(ing.monto for ing in ingresos)
+            total_gastos = sum(g.monto for g in gastos)
+            total_multas = sum(m.monto for m in multas)
+            
+            # Calcular indicadores
+            indicadores = []
+            
+            # Margen de utilidad
+            if total_ingresos > 0:
+                margen_utilidad = ((total_ingresos - total_gastos) / total_ingresos) * 100
+                indicadores.append({
+                    'nombre': 'Margen de Utilidad',
+                    'tipo_indicador': 'rentabilidad',
+                    'valor': float(margen_utilidad),
+                    'unidad': '%',
+                    'descripcion': 'Porcentaje de ingresos que se convierte en utilidad',
+                    'formula': '(Ingresos - Gastos) / Ingresos * 100'
+                })
+            
+            # Eficiencia de cobranza
+            multas_pagadas = multas.filter(estado='pagada').count()
+            total_multas_count = multas.count()
+            if total_multas_count > 0:
+                eficiencia_cobranza = (multas_pagadas / total_multas_count) * 100
+                indicadores.append({
+                    'nombre': 'Eficiencia de Cobranza',
+                    'tipo_indicador': 'eficiencia',
+                    'valor': float(eficiencia_cobranza),
+                    'unidad': '%',
+                    'descripcion': 'Porcentaje de multas pagadas',
+                    'formula': 'Multas Pagadas / Total Multas * 100'
+                })
+            
+            # Liquidez (simplificado)
+            if total_gastos > 0:
+                liquidez = (total_ingresos / total_gastos) * 100
+                indicadores.append({
+                    'nombre': 'Ratio de Liquidez',
+                    'tipo_indicador': 'liquidez',
+                    'valor': float(liquidez),
+                    'unidad': '%',
+                    'descripcion': 'Capacidad de cubrir gastos con ingresos',
+                    'formula': 'Ingresos / Gastos * 100'
+                })
+            
+            return Response({
+                'indicadores': indicadores,
+                'periodo_analisis': f'{fecha_inicio} a {fecha_fin}',
+                'datos_base': {
+                    'total_ingresos': float(total_ingresos),
+                    'total_gastos': float(total_gastos),
+                    'total_multas': float(total_multas)
+                }
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Error calculando indicadores: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class DashboardFinancieroViewSet(viewsets.ModelViewSet):
+    """Dashboards Financieros Personalizables - CU19"""
+    queryset = DashboardFinanciero.objects.all()
+    serializer_class = DashboardFinancieroSerializer
+    permission_classes = [RolPermiso]
+    
+    def perform_create(self, serializer):
+        serializer.save(creado_por=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def resumen_financiero(self, request):
+        """Obtener resumen financiero completo"""
+        try:
+            from datetime import datetime, timedelta
+            from finanzas.models import Ingreso
+            
+            # Parámetros de fecha
+            periodo = request.query_params.get('periodo', 'mes')
+            fecha_fin = datetime.now().date()
+            
+            if periodo == 'mes':
+                fecha_inicio = fecha_fin.replace(day=1)
+            elif periodo == 'trimestre':
+                fecha_inicio = fecha_fin - timedelta(days=90)
+            elif periodo == 'año':
+                fecha_inicio = fecha_fin - timedelta(days=365)
+            else:
+                fecha_inicio = fecha_fin - timedelta(days=30)
+            
+            # Obtener datos
+            ingresos = Ingreso.objects.filter(
+                fecha_ingreso__range=[fecha_inicio, fecha_fin],
+                estado='confirmado'
+            )
+            gastos = Gastos.objects.filter(
+                fecha_hora__date__range=[fecha_inicio, fecha_fin]
+            )
+            multas = Multa.objects.filter(
+                fecha_emision__range=[fecha_inicio, fecha_fin]
+            )
+            
+            # Calcular totales
+            total_ingresos = sum(ing.monto for ing in ingresos)
+            total_gastos = sum(g.monto for g in gastos)
+            total_multas = sum(m.monto for m in multas)
+            saldo_neto = total_ingresos - total_gastos
+            
+            # Margen de utilidad
+            margen_utilidad = (saldo_neto / total_ingresos * 100) if total_ingresos > 0 else 0
+            
+            # Ingresos por tipo
+            ingresos_por_tipo = {}
+            for tipo, _ in Ingreso.TIPO_INGRESO_CHOICES:
+                ingresos_por_tipo[tipo] = sum(
+                    ing.monto for ing in ingresos if ing.tipo_ingreso == tipo
+                )
+            
+            # Tendencia (últimos 6 meses)
+            tendencia_ingresos = []
+            tendencia_gastos = []
+            
+            for i in range(6):
+                fecha_mes = fecha_fin - timedelta(days=30*i)
+                mes_inicio = fecha_mes.replace(day=1)
+                mes_fin = fecha_mes.replace(day=28) + timedelta(days=4)
+                mes_fin = mes_fin - timedelta(days=mes_fin.day)
+                
+                ing_mes = sum(
+                    ing.monto for ing in ingresos 
+                    if mes_inicio <= ing.fecha_ingreso <= mes_fin
+                )
+                gas_mes = sum(
+                    g.monto for g in gastos 
+                    if mes_inicio <= g.fecha_hora.date() <= mes_fin
+                )
+                
+                tendencia_ingresos.append({
+                    'mes': fecha_mes.strftime('%Y-%m'),
+                    'total': float(ing_mes)
+                })
+                tendencia_gastos.append({
+                    'mes': fecha_mes.strftime('%Y-%m'),
+                    'total': float(gas_mes)
+                })
+            
+            tendencia_ingresos.reverse()
+            tendencia_gastos.reverse()
+            
+            resumen = {
+                'periodo': periodo,
+                'total_ingresos': float(total_ingresos),
+                'total_gastos': float(total_gastos),
+                'total_multas': float(total_multas),
+                'saldo_neto': float(saldo_neto),
+                'margen_utilidad': float(margen_utilidad),
+                'ingresos_por_tipo': {k: float(v) for k, v in ingresos_por_tipo.items()},
+                'gastos_por_categoria': {},  # Se puede implementar categorización de gastos
+                'tendencia_ingresos': tendencia_ingresos,
+                'tendencia_gastos': tendencia_gastos
+            }
+            
+            serializer = ResumenFinancieroSerializer(resumen)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Error generando resumen: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['get'])
+    def analisis_morosidad(self, request):
+        """Análisis de morosidad"""
+        try:
+            # Obtener multas pendientes y vencidas
+            multas_pendientes = Multa.objects.filter(estado='pendiente')
+            multas_vencidas = multa.objects.filter(estado='vencida')
+            
+            total_morosidad = sum(m.monto for m in multas_pendientes) + sum(m.monto for m in multas_vencidas)
+            residentes_morosos = len(set(m.residente.id for m in multas_pendientes))
+            
+            # Calcular porcentaje de morosidad
+            total_multas = Multa.objects.count()
+            porcentaje_morosidad = (residentes_morosos / total_multas * 100) if total_multas > 0 else 0
+            
+            # Top morosos
+            from django.db.models import Sum
+            top_morosos = Multa.objects.filter(
+                estado__in=['pendiente', 'vencida']
+            ).values('residente__persona__nombre').annotate(
+                total_deuda=Sum('monto')
+            ).order_by('-total_deuda')[:5]
+            
+            analisis = {
+                'total_morosidad': float(total_morosidad),
+                'residentes_morosos': residentes_morosos,
+                'porcentaje_morosidad': float(porcentaje_morosidad),
+                'promedio_dias_vencido': 0,  # Se puede calcular
+                'top_morosos': [
+                    {
+                        'residente': item['residente__persona__nombre'],
+                        'total_deuda': float(item['total_deuda'])
+                    }
+                    for item in top_morosos
+                ],
+                'tendencia_morosidad': [],  # Se puede implementar
+                'prediccion_morosidad': {}  # Se puede implementar
+            }
+            
+            serializer = AnalisisMorosidadSerializer(analisis)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Error analizando morosidad: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )

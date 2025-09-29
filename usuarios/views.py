@@ -276,3 +276,371 @@ class UsuariosResidentesViewSet(viewsets.ReadOnlyModelViewSet):
             rol__nombre__iexact='residente',
             is_active=True
         ).select_related('rol')
+
+# CU23: Asignación de Tareas para Empleados - Nuevos ViewSets
+from rest_framework import status
+from django.db.models import Count, Sum, Q, F, Avg
+from datetime import datetime, timedelta
+from decimal import Decimal
+from usuarios.models import TipoTarea, TareaEmpleado, ComentarioTarea, EvaluacionTarea
+from usuarios.serializers.usuarios_serializer import (
+    TipoTareaSerializer, TareaEmpleadoSerializer, ComentarioTareaSerializer,
+    EvaluacionTareaSerializer, ResumenTareasSerializer, EstadisticasTareasSerializer,
+    ResumenEmpleadoSerializer
+)
+
+
+class TipoTareaViewSet(viewsets.ModelViewSet):
+    """Gestión de Tipos de Tareas - CU23"""
+    queryset = TipoTarea.objects.all()
+    serializer_class = TipoTareaSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros
+        categoria = self.request.query_params.get('categoria')
+        if categoria:
+            queryset = queryset.filter(categoria=categoria)
+        
+        activo = self.request.query_params.get('activo')
+        if activo is not None:
+            queryset = queryset.filter(activo=activo.lower() == 'true')
+        
+        requiere_especialista = self.request.query_params.get('requiere_especialista')
+        if requiere_especialista is not None:
+            queryset = queryset.filter(requiere_especialista=requiere_especialista.lower() == 'true')
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def activos(self, request):
+        """Obtiene solo los tipos de tareas activos"""
+        tipos = self.get_queryset().filter(activo=True)
+        serializer = self.get_serializer(tipos, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def por_categoria(self, request):
+        """Obtiene tipos de tareas agrupados por categoría"""
+        tipos = self.get_queryset().filter(activo=True)
+        resultado = {}
+        
+        for tipo in tipos:
+            categoria = tipo.get_categoria_display()
+            if categoria not in resultado:
+                resultado[categoria] = []
+            resultado[categoria].append(TipoTareaSerializer(tipo).data)
+        
+        return Response(resultado)
+
+
+class TareaEmpleadoViewSet(viewsets.ModelViewSet):
+    """Gestión de Tareas de Empleados - CU23"""
+    queryset = TareaEmpleado.objects.all()
+    serializer_class = TareaEmpleadoSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def perform_create(self, serializer):
+        serializer.save(supervisor=self.request.user)
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros
+        estado = self.request.query_params.get('estado')
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        
+        prioridad = self.request.query_params.get('prioridad')
+        if prioridad:
+            queryset = queryset.filter(prioridad=prioridad)
+        
+        empleado = self.request.query_params.get('empleado')
+        if empleado:
+            queryset = queryset.filter(empleado_asignado_id=empleado)
+        
+        supervisor = self.request.query_params.get('supervisor')
+        if supervisor:
+            queryset = queryset.filter(supervisor_id=supervisor)
+        
+        categoria = self.request.query_params.get('categoria')
+        if categoria:
+            queryset = queryset.filter(tipo_tarea__categoria=categoria)
+        
+        vencidas = self.request.query_params.get('vencidas')
+        if vencidas is not None:
+            if vencidas.lower() == 'true':
+                queryset = queryset.filter(
+                    fecha_limite__lt=timezone.now(),
+                    estado__in=['asignada', 'en_progreso']
+                )
+            else:
+                queryset = queryset.exclude(
+                    fecha_limite__lt=timezone.now(),
+                    estado__in=['asignada', 'en_progreso']
+                )
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def mis_tareas(self, request):
+        """Obtiene las tareas del empleado autenticado"""
+        empleado = Empleado.objects.filter(usuario=request.user).first()
+        if not empleado:
+            return Response({'error': 'Usuario no es un empleado'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        tareas = self.get_queryset().filter(empleado_asignado=empleado)
+        serializer = self.get_serializer(tareas, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def tareas_supervisadas(self, request):
+        """Obtiene las tareas supervisadas por el usuario autenticado"""
+        tareas = self.get_queryset().filter(supervisor=request.user)
+        serializer = self.get_serializer(tareas, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def vencidas(self, request):
+        """Obtiene tareas vencidas"""
+        tareas = self.get_queryset().filter(
+            fecha_limite__lt=timezone.now(),
+            estado__in=['asignada', 'en_progreso']
+        )
+        serializer = self.get_serializer(tareas, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def iniciar(self, request, pk=None):
+        """Inicia una tarea"""
+        tarea = self.get_object()
+        if tarea.estado != 'asignada':
+            return Response(
+                {'error': 'Solo se pueden iniciar tareas asignadas'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        tarea.estado = 'en_progreso'
+        tarea.fecha_inicio = timezone.now()
+        tarea.save()
+        
+        # Crear comentario automático
+        ComentarioTarea.objects.create(
+            tarea=tarea,
+            autor=request.user,
+            comentario=f"Tarea iniciada por {request.user.username}",
+            es_interno=False
+        )
+        
+        return Response({'message': 'Tarea iniciada'})
+    
+    @action(detail=True, methods=['post'])
+    def completar(self, request, pk=None):
+        """Completa una tarea"""
+        tarea = self.get_object()
+        if tarea.estado != 'en_progreso':
+            return Response(
+                {'error': 'Solo se pueden completar tareas en progreso'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        tarea.estado = 'completada'
+        tarea.fecha_completado = timezone.now()
+        tarea.progreso_porcentaje = 100
+        tarea.save()
+        
+        # Crear comentario automático
+        ComentarioTarea.objects.create(
+            tarea=tarea,
+            autor=request.user,
+            comentario=f"Tarea completada por {request.user.username}",
+            es_interno=False
+        )
+        
+        return Response({'message': 'Tarea completada'})
+    
+    @action(detail=True, methods=['post'])
+    def pausar(self, request, pk=None):
+        """Pausa una tarea"""
+        tarea = self.get_object()
+        if tarea.estado != 'en_progreso':
+            return Response(
+                {'error': 'Solo se pueden pausar tareas en progreso'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        tarea.estado = 'pausada'
+        tarea.save()
+        
+        return Response({'message': 'Tarea pausada'})
+    
+    @action(detail=True, methods=['post'])
+    def reanudar(self, request, pk=None):
+        """Reanuda una tarea pausada"""
+        tarea = self.get_object()
+        if tarea.estado != 'pausada':
+            return Response(
+                {'error': 'Solo se pueden reanudar tareas pausadas'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        tarea.estado = 'en_progreso'
+        tarea.save()
+        
+        return Response({'message': 'Tarea reanudada'})
+    
+    @action(detail=False, methods=['get'])
+    def resumen(self, request):
+        """Obtiene resumen de tareas"""
+        tareas = self.get_queryset()
+        
+        resumen = {
+            'total_tareas': tareas.count(),
+            'tareas_asignadas': tareas.filter(estado='asignada').count(),
+            'tareas_en_progreso': tareas.filter(estado='en_progreso').count(),
+            'tareas_completadas': tareas.filter(estado='completada').count(),
+            'tareas_vencidas': tareas.filter(
+                fecha_limite__lt=timezone.now(),
+                estado__in=['asignada', 'en_progreso']
+            ).count(),
+            'tareas_canceladas': tareas.filter(estado='cancelada').count(),
+            'horas_trabajadas_totales': tareas.aggregate(
+                total=Sum('horas_trabajadas')
+            )['total'] or Decimal('0'),
+            'costo_total_estimado': tareas.aggregate(
+                total=Sum('costo_estimado')
+            )['total'] or Decimal('0'),
+            'costo_total_real': tareas.aggregate(
+                total=Sum('costo_real')
+            )['total'] or Decimal('0')
+        }
+        
+        serializer = ResumenTareasSerializer(resumen)
+        return Response(serializer.data)
+
+
+class ComentarioTareaViewSet(viewsets.ModelViewSet):
+    """Gestión de Comentarios de Tareas - CU23"""
+    queryset = ComentarioTarea.objects.all()
+    serializer_class = ComentarioTareaSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def perform_create(self, serializer):
+        serializer.save(autor=self.request.user)
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros
+        tarea = self.request.query_params.get('tarea')
+        if tarea:
+            queryset = queryset.filter(tarea_id=tarea)
+        
+        autor = self.request.query_params.get('autor')
+        if autor:
+            queryset = queryset.filter(autor_id=autor)
+        
+        es_interno = self.request.query_params.get('es_interno')
+        if es_interno is not None:
+            queryset = queryset.filter(es_interno=es_interno.lower() == 'true')
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def por_tarea(self, request):
+        """Obtiene comentarios de una tarea específica"""
+        tarea_id = request.query_params.get('tarea_id')
+        if not tarea_id:
+            return Response(
+                {'error': 'Se requiere el parámetro tarea_id'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        comentarios = self.get_queryset().filter(tarea_id=tarea_id)
+        serializer = self.get_serializer(comentarios, many=True)
+        return Response(serializer.data)
+
+
+class EvaluacionTareaViewSet(viewsets.ModelViewSet):
+    """Gestión de Evaluaciones de Tareas - CU23"""
+    queryset = EvaluacionTarea.objects.all()
+    serializer_class = EvaluacionTareaSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def perform_create(self, serializer):
+        serializer.save(evaluador=self.request.user)
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros
+        evaluador = self.request.query_params.get('evaluador')
+        if evaluador:
+            queryset = queryset.filter(evaluador_id=evaluador)
+        
+        tarea = self.request.query_params.get('tarea')
+        if tarea:
+            queryset = queryset.filter(tarea_id=tarea)
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def por_empleado(self, request):
+        """Obtiene evaluaciones de tareas de un empleado específico"""
+        empleado_id = request.query_params.get('empleado_id')
+        if not empleado_id:
+            return Response(
+                {'error': 'Se requiere el parámetro empleado_id'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        evaluaciones = self.get_queryset().filter(tarea__empleado_asignado_id=empleado_id)
+        serializer = self.get_serializer(evaluaciones, many=True)
+        return Response(serializer.data)
+
+
+class EstadisticasTareasViewSet(viewsets.ViewSet):
+    """Estadísticas de Tareas - CU23"""
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['get'])
+    def generales(self, request):
+        """Obtiene estadísticas generales de tareas"""
+        tareas = TareaEmpleado.objects.all()
+        evaluaciones = EvaluacionTarea.objects.all()
+        
+        # Estadísticas de tareas
+        tareas_por_estado = dict(tareas.values('estado').annotate(count=Count('id')).values_list('estado', 'count'))
+        tareas_por_prioridad = dict(tareas.values('prioridad').annotate(count=Count('id')).values_list('prioridad', 'count'))
+        tareas_por_categoria = dict(tareas.values('tipo_tarea__categoria').annotate(count=Count('id')).values_list('tipo_tarea__categoria', 'count'))
+        
+        # Estadísticas por empleado
+        empleados_stats = {}
+        for empleado in Empleado.objects.all():
+            empleado_tareas = tareas.filter(empleado_asignado=empleado)
+            empleados_stats[f"{empleado.persona_relacionada.nombre} {empleado.persona_relacionada.apellido}"] = {
+                'total_tareas': empleado_tareas.count(),
+                'tareas_completadas': empleado_tareas.filter(estado='completada').count(),
+                'horas_trabajadas': float(empleado_tareas.aggregate(total=Sum('horas_trabajadas'))['total'] or 0)
+            }
+        
+        # Calificaciones promedio
+        calificaciones_promedio = evaluaciones.aggregate(
+            promedio=Avg('calidad_trabajo')
+        )['promedio'] or 0
+        
+        estadisticas = {
+            'tareas_por_estado': tareas_por_estado,
+            'tareas_por_prioridad': tareas_por_prioridad,
+            'tareas_por_categoria': tareas_por_categoria,
+            'tareas_por_empleado': empleados_stats,
+            'tareas_por_mes': [],  # Se puede implementar si es necesario
+            'horas_por_mes': [],   # Se puede implementar si es necesario
+            'calificaciones_promedio': calificaciones_promedio,
+            'empleados_mas_productivos': []  # Se puede implementar si es necesario
+        }
+        
+        serializer = EstadisticasTareasSerializer(estadisticas)
+        return Response(serializer.data)

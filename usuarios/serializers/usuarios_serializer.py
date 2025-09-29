@@ -316,9 +316,194 @@ class RegistroAccesoSerializer(serializers.ModelSerializer):
             return {
                 'id': obj.autorizado_por.id,
                 'username': obj.autorizado_por.username,
-                'email': obj.autorizado_por.email
             }
         return None
+
+# CU23: Asignación de Tareas para Empleados - Serializers adicionales
+from usuarios.models import TipoTarea, TareaEmpleado, ComentarioTarea, EvaluacionTarea
+
+
+class TipoTareaSerializer(serializers.ModelSerializer):
+    """Serializer para TipoTarea - CU23"""
+    categoria_display = serializers.CharField(source='get_categoria_display', read_only=True)
+    prioridad_default_display = serializers.CharField(source='get_prioridad_default_display', read_only=True)
+    
+    class Meta:
+        model = TipoTarea
+        fields = [
+            'id', 'nombre', 'categoria', 'categoria_display', 'descripcion',
+            'prioridad_default', 'prioridad_default_display', 'duracion_estimada_horas',
+            'requiere_especialista', 'requiere_herramientas', 'materiales_necesarios',
+            'instrucciones', 'activo'
+        ]
+    
+    def validate_duracion_estimada_horas(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("La duración estimada debe ser mayor a 0")
+        return value
+
+
+class TareaEmpleadoSerializer(serializers.ModelSerializer):
+    """Serializer para TareaEmpleado - CU23"""
+    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
+    prioridad_display = serializers.CharField(source='get_prioridad_display', read_only=True)
+    tipo_tarea_nombre = serializers.CharField(source='tipo_tarea.nombre', read_only=True)
+    tipo_tarea_categoria = serializers.CharField(source='tipo_tarea.categoria', read_only=True)
+    empleado_nombre = serializers.SerializerMethodField()
+    supervisor_nombre = serializers.CharField(source='supervisor.username', read_only=True)
+    progreso_calculado = serializers.SerializerMethodField()
+    esta_vencida = serializers.SerializerMethodField()
+    tiempo_restante = serializers.SerializerMethodField()
+    fecha_asignacion_formatted = serializers.SerializerMethodField()
+    fecha_limite_formatted = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TareaEmpleado
+        fields = [
+            'id', 'titulo', 'descripcion', 'tipo_tarea', 'tipo_tarea_nombre', 'tipo_tarea_categoria',
+            'empleado_asignado', 'empleado_nombre', 'supervisor', 'supervisor_nombre',
+            'fecha_asignacion', 'fecha_asignacion_formatted', 'fecha_limite', 'fecha_limite_formatted',
+            'fecha_inicio', 'fecha_completado', 'estado', 'estado_display', 'prioridad', 'prioridad_display',
+            'materiales_proporcionados', 'herramientas_necesarias', 'costo_estimado', 'costo_real',
+            'horas_trabajadas', 'progreso_porcentaje', 'progreso_calculado', 'esta_vencida', 'tiempo_restante',
+            'observaciones_empleado', 'observaciones_supervisor', 'foto_antes', 'foto_despues',
+            'documento_adjunto', 'fecha_modificacion'
+        ]
+        read_only_fields = ['fecha_asignacion', 'fecha_modificacion']
+    
+    def get_empleado_nombre(self, obj):
+        return f"{obj.empleado_asignado.persona_relacionada.nombre} {obj.empleado_asignado.persona_relacionada.apellido}"
+    
+    def get_progreso_calculado(self, obj):
+        return obj.calcular_progreso()
+    
+    def get_esta_vencida(self, obj):
+        return obj.esta_vencida()
+    
+    def get_tiempo_restante(self, obj):
+        return obj.tiempo_restante()
+    
+    def get_fecha_asignacion_formatted(self, obj):
+        return obj.fecha_asignacion.strftime('%d/%m/%Y %H:%M')
+    
+    def get_fecha_limite_formatted(self, obj):
+        return obj.fecha_limite.strftime('%d/%m/%Y %H:%M')
+    
+    def validate_fecha_limite(self, value):
+        from django.utils import timezone
+        if value <= timezone.now():
+            raise serializers.ValidationError("La fecha límite debe ser futura")
+        return value
+    
+    def validate_progreso_porcentaje(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("El progreso debe estar entre 0 y 100")
+        return value
+    
+    def validate_costo_estimado(self, value):
+        if value < 0:
+            raise serializers.ValidationError("El costo estimado no puede ser negativo")
+        return value
+    
+    def validate_costo_real(self, value):
+        if value < 0:
+            raise serializers.ValidationError("El costo real no puede ser negativo")
+        return value
+
+
+class ComentarioTareaSerializer(serializers.ModelSerializer):
+    """Serializer para ComentarioTarea - CU23"""
+    autor_nombre = serializers.CharField(source='autor.username', read_only=True)
+    fecha_comentario_formatted = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ComentarioTarea
+        fields = [
+            'id', 'tarea', 'autor', 'autor_nombre', 'comentario',
+            'fecha_comentario', 'fecha_comentario_formatted', 'es_interno'
+        ]
+        read_only_fields = ['fecha_comentario']
+
+
+class EvaluacionTareaSerializer(serializers.ModelSerializer):
+    """Serializer para EvaluacionTarea - CU23"""
+    calificacion_promedio = serializers.SerializerMethodField()
+    evaluador_nombre = serializers.CharField(source='evaluador.username', read_only=True)
+    fecha_evaluacion_formatted = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = EvaluacionTarea
+        fields = [
+            'id', 'tarea', 'evaluador', 'evaluador_nombre',
+            'calidad_trabajo', 'cumplimiento_tiempo', 'uso_recursos', 'comunicacion',
+            'comentarios_positivos', 'areas_mejora', 'recomendaciones',
+            'fecha_evaluacion', 'fecha_evaluacion_formatted', 'calificacion_promedio'
+        ]
+        read_only_fields = ['fecha_evaluacion']
+    
+    def get_calificacion_promedio(self, obj):
+        return obj.calificacion_promedio()
+    
+    def get_fecha_evaluacion_formatted(self, obj):
+        return obj.fecha_evaluacion.strftime('%d/%m/%Y %H:%M')
+    
+    def validate_calidad_trabajo(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("La calificación debe estar entre 1 y 5")
+        return value
+    
+    def validate_cumplimiento_tiempo(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("La calificación debe estar entre 1 y 5")
+        return value
+    
+    def validate_uso_recursos(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("La calificación debe estar entre 1 y 5")
+        return value
+    
+    def validate_comunicacion(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("La calificación debe estar entre 1 y 5")
+        return value
+
+
+# Serializers para estadísticas y resúmenes
+class ResumenTareasSerializer(serializers.Serializer):
+    """Serializer para resumen de tareas - CU23"""
+    total_tareas = serializers.IntegerField()
+    tareas_asignadas = serializers.IntegerField()
+    tareas_en_progreso = serializers.IntegerField()
+    tareas_completadas = serializers.IntegerField()
+    tareas_vencidas = serializers.IntegerField()
+    tareas_canceladas = serializers.IntegerField()
+    horas_trabajadas_totales = serializers.DecimalField(max_digits=8, decimal_places=2)
+    costo_total_estimado = serializers.DecimalField(max_digits=15, decimal_places=2)
+    costo_total_real = serializers.DecimalField(max_digits=15, decimal_places=2)
+
+
+class EstadisticasTareasSerializer(serializers.Serializer):
+    """Serializer para estadísticas de tareas - CU23"""
+    tareas_por_estado = serializers.DictField()
+    tareas_por_prioridad = serializers.DictField()
+    tareas_por_categoria = serializers.DictField()
+    tareas_por_empleado = serializers.DictField()
+    tareas_por_mes = serializers.ListField()
+    horas_por_mes = serializers.ListField()
+    calificaciones_promedio = serializers.DecimalField(max_digits=3, decimal_places=2)
+    empleados_mas_productivos = serializers.ListField()
+
+
+class ResumenEmpleadoSerializer(serializers.Serializer):
+    """Serializer para resumen de empleado - CU23"""
+    empleado_nombre = serializers.CharField()
+    total_tareas_asignadas = serializers.IntegerField()
+    tareas_completadas = serializers.IntegerField()
+    tareas_en_progreso = serializers.IntegerField()
+    tareas_vencidas = serializers.IntegerField()
+    horas_trabajadas_totales = serializers.DecimalField(max_digits=8, decimal_places=2)
+    calificacion_promedio = serializers.DecimalField(max_digits=3, decimal_places=2)
+    eficiencia_porcentaje = serializers.DecimalField(max_digits=5, decimal_places=2)
 
 class ConfiguracionAccesoSerializer(serializers.ModelSerializer):
     class Meta:

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ..models import CuotaMensual, CuotaUnidad, PagoCuota
+from ..models import CuotaMensual, CuotaUnidad, PagoCuota, Ingreso, ResumenIngresos
 from comunidad.models import Unidad
 from usuarios.models import Persona
 
@@ -149,3 +149,105 @@ class MorososSerializer(serializers.Serializer):
     monto_adeudado = serializers.DecimalField(max_digits=10, decimal_places=2)
     dias_vencido = serializers.IntegerField()
     fecha_vencimiento = serializers.DateField()
+
+# CU18 - Gestión de Ingresos
+class IngresoSerializer(serializers.ModelSerializer):
+    tipo_ingreso_display = serializers.CharField(source='get_tipo_ingreso_display', read_only=True)
+    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
+    unidad_numero = serializers.CharField(source='unidad_relacionada.numero_casa', read_only=True)
+    residente_nombre = serializers.CharField(source='residente_relacionado.nombre', read_only=True)
+    mes_año = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Ingreso
+        fields = [
+            'id', 'tipo_ingreso', 'tipo_ingreso_display', 'concepto', 'descripcion',
+            'monto', 'fecha_ingreso', 'fecha_registro', 'estado', 'estado_display',
+            'unidad_relacionada', 'unidad_numero', 'residente_relacionado', 'residente_nombre',
+            'cuota_relacionada', 'comprobante', 'numero_referencia', 'observaciones',
+            'registrado_por', 'mes_año'
+        ]
+        read_only_fields = ['fecha_registro', 'registrado_por']
+    
+    def get_mes_año(self, obj):
+        return obj.get_mes_año()
+    
+    def validate_monto(self, value):
+        """Validar que el monto sea positivo"""
+        if value <= 0:
+            raise serializers.ValidationError("El monto debe ser mayor a 0")
+        return value
+    
+    def validate_fecha_ingreso(self, value):
+        """Validar que la fecha de ingreso no sea futura"""
+        from django.utils import timezone
+        if value > timezone.now().date():
+            raise serializers.ValidationError("La fecha de ingreso no puede ser futura")
+        return value
+
+class ResumenIngresosSerializer(serializers.ModelSerializer):
+    porcentaje_cuotas = serializers.SerializerMethodField()
+    porcentaje_multas = serializers.SerializerMethodField()
+    porcentaje_servicios = serializers.SerializerMethodField()
+    porcentaje_alquiler = serializers.SerializerMethodField()
+    porcentaje_eventos = serializers.SerializerMethodField()
+    porcentaje_donaciones = serializers.SerializerMethodField()
+    porcentaje_otros = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ResumenIngresos
+        fields = [
+            'id', 'mes_año', 'total_cuotas', 'total_multas', 'total_servicios',
+            'total_alquiler', 'total_eventos', 'total_donaciones', 'total_otros',
+            'total_general', 'fecha_creacion', 'fecha_modificacion', 'creado_por',
+            'porcentaje_cuotas', 'porcentaje_multas', 'porcentaje_servicios',
+            'porcentaje_alquiler', 'porcentaje_eventos', 'porcentaje_donaciones',
+            'porcentaje_otros'
+        ]
+        read_only_fields = ['fecha_creacion', 'fecha_modificacion', 'creado_por']
+    
+    def get_porcentaje_cuotas(self, obj):
+        if obj.total_general > 0:
+            return round((obj.total_cuotas / obj.total_general) * 100, 2)
+        return 0
+    
+    def get_porcentaje_multas(self, obj):
+        if obj.total_general > 0:
+            return round((obj.total_multas / obj.total_general) * 100, 2)
+        return 0
+    
+    def get_porcentaje_servicios(self, obj):
+        if obj.total_general > 0:
+            return round((obj.total_servicios / obj.total_general) * 100, 2)
+        return 0
+    
+    def get_porcentaje_alquiler(self, obj):
+        if obj.total_general > 0:
+            return round((obj.total_alquiler / obj.total_general) * 100, 2)
+        return 0
+    
+    def get_porcentaje_eventos(self, obj):
+        if obj.total_general > 0:
+            return round((obj.total_eventos / obj.total_general) * 100, 2)
+        return 0
+    
+    def get_porcentaje_donaciones(self, obj):
+        if obj.total_general > 0:
+            return round((obj.total_donaciones / obj.total_general) * 100, 2)
+        return 0
+    
+    def get_porcentaje_otros(self, obj):
+        if obj.total_general > 0:
+            return round((obj.total_otros / obj.total_general) * 100, 2)
+        return 0
+
+class EstadisticasIngresosSerializer(serializers.Serializer):
+    """Serializer para estadísticas de ingresos"""
+    total_ingresos_mes = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_ingresos_año = serializers.DecimalField(max_digits=12, decimal_places=2)
+    promedio_mensual = serializers.DecimalField(max_digits=12, decimal_places=2)
+    crecimiento_mensual = serializers.DecimalField(max_digits=5, decimal_places=2)
+    crecimiento_anual = serializers.DecimalField(max_digits=5, decimal_places=2)
+    ingresos_por_tipo = serializers.DictField()
+    tendencia_mensual = serializers.ListField()
+    top_unidades_ingresos = serializers.ListField()

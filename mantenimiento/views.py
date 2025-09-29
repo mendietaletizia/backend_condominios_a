@@ -145,3 +145,187 @@ class ReglamentoViewSet(viewsets.ModelViewSet):
     queryset = Reglamento.objects.all()
     serializer_class = ReglamentoSerializer
     permission_classes = [RolPermiso]
+
+# CU16: Mantenimiento de Áreas Comunes - Nuevos ViewSets
+from rest_framework import status
+from django.db.models import Count, Sum, Q, F
+from datetime import timedelta
+from decimal import Decimal
+from .models import TipoMantenimiento, PlanMantenimiento, TareaMantenimiento, InventarioArea
+from .serializers.mantenimiento_serializer import (
+    TipoMantenimientoSerializer, PlanMantenimientoSerializer,
+    TareaMantenimientoSerializer, BitacoraMantenimientoSerializer,
+    InventarioAreaSerializer, ResumenMantenimientoSerializer,
+    EstadisticasMantenimientoSerializer, ResumenEquiposSerializer
+)
+
+
+class TipoMantenimientoViewSet(viewsets.ModelViewSet):
+    """Gestión de Tipos de Mantenimiento - CU16"""
+    queryset = TipoMantenimiento.objects.all()
+    serializer_class = TipoMantenimientoSerializer
+    permission_classes = [RolPermiso]
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros
+        tipo = self.request.query_params.get('tipo')
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
+        
+        activo = self.request.query_params.get('activo')
+        if activo is not None:
+            queryset = queryset.filter(activo=activo.lower() == 'true')
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def activos(self, request):
+        """Obtiene solo los tipos de mantenimiento activos"""
+        tipos = self.get_queryset().filter(activo=True)
+        serializer = self.get_serializer(tipos, many=True)
+        return Response(serializer.data)
+
+
+class PlanMantenimientoViewSet(viewsets.ModelViewSet):
+    """Gestión de Planes de Mantenimiento - CU16"""
+    queryset = PlanMantenimiento.objects.all()
+    serializer_class = PlanMantenimientoSerializer
+    permission_classes = [RolPermiso]
+    
+    def perform_create(self, serializer):
+        serializer.save(creado_por=self.request.user)
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros
+        estado = self.request.query_params.get('estado')
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        
+        prioridad = self.request.query_params.get('prioridad')
+        if prioridad:
+            queryset = queryset.filter(prioridad=prioridad)
+        
+        area_comun = self.request.query_params.get('area_comun')
+        if area_comun:
+            queryset = queryset.filter(area_comun_id=area_comun)
+        
+        empleado = self.request.query_params.get('empleado')
+        if empleado:
+            queryset = queryset.filter(empleado_asignado_id=empleado)
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def activos(self, request):
+        """Obtiene planes de mantenimiento activos"""
+        planes = self.get_queryset().filter(estado='activo')
+        serializer = self.get_serializer(planes, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def vencidos(self, request):
+        """Obtiene planes de mantenimiento vencidos"""
+        planes = self.get_queryset().filter(
+            estado='activo',
+            fecha_fin_estimada__lt=timezone.now().date()
+        )
+        serializer = self.get_serializer(planes, many=True)
+        return Response(serializer.data)
+
+
+class TareaMantenimientoViewSet(viewsets.ModelViewSet):
+    """Gestión de Tareas de Mantenimiento - CU16"""
+    queryset = TareaMantenimiento.objects.all()
+    serializer_class = TareaMantenimientoSerializer
+    permission_classes = [RolPermiso]
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros
+        estado = self.request.query_params.get('estado')
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        
+        plan_mantenimiento = self.request.query_params.get('plan_mantenimiento')
+        if plan_mantenimiento:
+            queryset = queryset.filter(plan_mantenimiento_id=plan_mantenimiento)
+        
+        empleado = self.request.query_params.get('empleado')
+        if empleado:
+            queryset = queryset.filter(empleado_asignado_id=empleado)
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def pendientes(self, request):
+        """Obtiene tareas pendientes"""
+        tareas = self.get_queryset().filter(estado='pendiente')
+        serializer = self.get_serializer(tareas, many=True)
+        return Response(serializer.data)
+
+
+class InventarioAreaViewSet(viewsets.ModelViewSet):
+    """Gestión de Inventario de Áreas - CU16"""
+    queryset = InventarioArea.objects.all()
+    serializer_class = InventarioAreaSerializer
+    permission_classes = [RolPermiso]
+    
+    def perform_create(self, serializer):
+        serializer.save(registrado_por=self.request.user)
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros
+        area_comun = self.request.query_params.get('area_comun')
+        if area_comun:
+            queryset = queryset.filter(area_comun_id=area_comun)
+        
+        estado_actual = self.request.query_params.get('estado_actual')
+        if estado_actual:
+            queryset = queryset.filter(estado_actual=estado_actual)
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def necesitan_mantenimiento(self, request):
+        """Obtiene equipos que necesitan mantenimiento"""
+        equipos = self.get_queryset().filter(
+            fecha_proximo_mantenimiento__lte=timezone.now().date()
+        )
+        serializer = self.get_serializer(equipos, many=True)
+        return Response(serializer.data)
+
+
+class EstadisticasMantenimientoViewSet(viewsets.ViewSet):
+    """Estadísticas de Mantenimiento - CU16"""
+    permission_classes = [RolPermiso]
+    
+    @action(detail=False, methods=['get'])
+    def generales(self, request):
+        """Obtiene estadísticas generales de mantenimiento"""
+        planes = PlanMantenimiento.objects.all()
+        tareas = TareaMantenimiento.objects.all()
+        equipos = InventarioArea.objects.all()
+        
+        # Estadísticas básicas
+        estadisticas = {
+            'total_planes': planes.count(),
+            'planes_activos': planes.filter(estado='activo').count(),
+            'planes_completados': planes.filter(estado='completado').count(),
+            'total_tareas': tareas.count(),
+            'tareas_pendientes': tareas.filter(estado='pendiente').count(),
+            'tareas_completadas': tareas.filter(estado='completada').count(),
+            'total_equipos': equipos.count(),
+            'equipos_necesitan_mantenimiento': equipos.filter(
+                fecha_proximo_mantenimiento__lte=timezone.now().date()
+            ).count()
+        }
+        
+        serializer = EstadisticasMantenimientoSerializer(estadisticas)
+        return Response(serializer.data)

@@ -20,11 +20,11 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/auth/', include('autenticacion.urls')),      # CU1, CU2
-    path('api/usuarios/', include('usuarios.urls')),       # CU3, CU4, CU5, CU13
-    path('api/comunidad/', include('comunidad.urls')),     # CU6, CU11, CU12, CU17
-    path('api/finanzas/', include('finanzas.urls')),       # CU18
-    path('api/economia/', include('economia.urls')),       # CU8, CU9, CU19, CU20
-    path('api/mantenimiento/', include('mantenimiento.urls')), # CU10
-    path('api/acceso/', include('usuarios.urls_acceso')), # CU14 - Gestión de Accesos
+    path('api/', include('autenticacion.urls')),      # CU1, CU2
+    path('api/', include('usuarios.urls')),       # CU3, CU4, CU5, CU13
+    path('api/', include('comunidad.urls')),     # CU6, CU11, CU12, CU17
+    path('api/', include('finanzas.urls')),       # CU18
+    path('api/', include('economia.urls')),       # CU8, CU9, CU19, CU20
+    path('api/', include('mantenimiento.urls')), # CU10
+    path('api/', include('usuarios.urls_acceso')), # CU14 - Gestión de Accesos
 ]

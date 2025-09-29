@@ -9,10 +9,11 @@ from decimal import Decimal
 import uuid
 import logging
 
-from .models import CuotaMensual, CuotaUnidad, PagoCuota
+from .models import CuotaMensual, CuotaUnidad, PagoCuota, Ingreso, ResumenIngresos
 from .serializers.finanzas_serializer import (
     CuotaMensualSerializer, CuotaUnidadSerializer, CuotaUnidadUpdateSerializer, PagoCuotaSerializer,
-    ResumenCuotasSerializer, MorososSerializer
+    ResumenCuotasSerializer, MorososSerializer, IngresoSerializer, ResumenIngresosSerializer,
+    EstadisticasIngresosSerializer
 )
 from comunidad.models import Unidad
 from comunidad.services import NotificacionService
@@ -729,4 +730,256 @@ class CuotasResidenteViewSet(viewsets.ReadOnlyModelViewSet):
             cuota_unidad__unidad_id=unidad_id
         )
         serializer = self.get_serializer(pagos, many=True)
+        return Response(serializer.data)
+
+# CU18 - Gestión de Ingresos
+class IngresoViewSet(viewsets.ModelViewSet):
+    """Gestión de Ingresos del Condominio - CU18"""
+    queryset = Ingreso.objects.all()
+    serializer_class = IngresoSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def perform_create(self, serializer):
+        serializer.save(registrado_por=self.request.user)
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtros opcionales
+        tipo_ingreso = self.request.query_params.get('tipo_ingreso')
+        estado = self.request.query_params.get('estado')
+        mes_año = self.request.query_params.get('mes_año')
+        unidad_id = self.request.query_params.get('unidad_id')
+        
+        if tipo_ingreso:
+            queryset = queryset.filter(tipo_ingreso=tipo_ingreso)
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        if unidad_id:
+            queryset = queryset.filter(unidad_relacionada_id=unidad_id)
+        if mes_año:
+            year, month = mes_año.split('-')
+            queryset = queryset.filter(
+                fecha_ingreso__year=year,
+                fecha_ingreso__month=month
+            )
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def estadisticas(self, request):
+        """Obtener estadísticas de ingresos"""
+        from django.db.models import Sum, Count
+        from datetime import datetime, timedelta
+        
+        # Parámetros de fecha
+        año_actual = datetime.now().year
+        mes_actual = datetime.now().month
+        
+        # Totales del mes actual
+        ingresos_mes = self.get_queryset().filter(
+            fecha_ingreso__year=año_actual,
+            fecha_ingreso__month=mes_actual,
+            estado='confirmado'
+        )
+        total_ingresos_mes = ingresos_mes.aggregate(total=Sum('monto'))['total'] or 0
+        
+        # Totales del año actual
+        ingresos_año = self.get_queryset().filter(
+            fecha_ingreso__year=año_actual,
+            estado='confirmado'
+        )
+        total_ingresos_año = ingresos_año.aggregate(total=Sum('monto'))['total'] or 0
+        
+        # Promedio mensual del año
+        meses_transcurridos = mes_actual
+        promedio_mensual = total_ingresos_año / meses_transcurridos if meses_transcurridos > 0 else 0
+        
+        # Crecimiento mensual (comparar con mes anterior)
+        mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
+        año_anterior = año_actual if mes_actual > 1 else año_actual - 1
+        
+        ingresos_mes_anterior = self.get_queryset().filter(
+            fecha_ingreso__year=año_anterior,
+            fecha_ingreso__month=mes_anterior,
+            estado='confirmado'
+        ).aggregate(total=Sum('monto'))['total'] or 0
+        
+        crecimiento_mensual = 0
+        if ingresos_mes_anterior > 0:
+            crecimiento_mensual = ((total_ingresos_mes - ingresos_mes_anterior) / ingresos_mes_anterior) * 100
+        
+        # Crecimiento anual (comparar con año anterior)
+        ingresos_año_anterior = self.get_queryset().filter(
+            fecha_ingreso__year=año_actual - 1,
+            estado='confirmado'
+        ).aggregate(total=Sum('monto'))['total'] or 0
+        
+        crecimiento_anual = 0
+        if ingresos_año_anterior > 0:
+            crecimiento_anual = ((total_ingresos_año - ingresos_año_anterior) / ingresos_año_anterior) * 100
+        
+        # Ingresos por tipo
+        ingresos_por_tipo = {}
+        for tipo, _ in Ingreso.TIPO_INGRESO_CHOICES:
+            total_tipo = ingresos_año.filter(tipo_ingreso=tipo).aggregate(total=Sum('monto'))['total'] or 0
+            ingresos_por_tipo[tipo] = float(total_tipo)
+        
+        # Tendencia mensual (últimos 12 meses)
+        tendencia_mensual = []
+        for i in range(12):
+            fecha = datetime.now() - timedelta(days=30*i)
+            total_mes = self.get_queryset().filter(
+                fecha_ingreso__year=fecha.year,
+                fecha_ingreso__month=fecha.month,
+                estado='confirmado'
+            ).aggregate(total=Sum('monto'))['total'] or 0
+            
+            tendencia_mensual.append({
+                'mes': fecha.strftime('%Y-%m'),
+                'total': float(total_mes)
+            })
+        
+        tendencia_mensual.reverse()
+        
+        # Top unidades por ingresos
+        top_unidades = self.get_queryset().filter(
+            estado='confirmado',
+            unidad_relacionada__isnull=False
+        ).values('unidad_relacionada__numero_casa').annotate(
+            total=Sum('monto')
+        ).order_by('-total')[:5]
+        
+        estadisticas = {
+            'total_ingresos_mes': float(total_ingresos_mes),
+            'total_ingresos_año': float(total_ingresos_año),
+            'promedio_mensual': float(promedio_mensual),
+            'crecimiento_mensual': round(crecimiento_mensual, 2),
+            'crecimiento_anual': round(crecimiento_anual, 2),
+            'ingresos_por_tipo': ingresos_por_tipo,
+            'tendencia_mensual': tendencia_mensual,
+            'top_unidades_ingresos': [
+                {
+                    'unidad': item['unidad_relacionada__numero_casa'],
+                    'total': float(item['total'])
+                }
+                for item in top_unidades
+            ]
+        }
+        
+        serializer = EstadisticasIngresosSerializer(estadisticas)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def resumen_mensual(self, request):
+        """Obtener resumen de ingresos por mes"""
+        mes_año = request.query_params.get('mes_año')
+        if not mes_año:
+            mes_año = datetime.now().strftime('%Y-%m')
+        
+        year, month = mes_año.split('-')
+        ingresos = self.get_queryset().filter(
+            fecha_ingreso__year=year,
+            fecha_ingreso__month=month,
+            estado='confirmado'
+        )
+        
+        # Crear o obtener resumen
+        resumen, created = ResumenIngresos.objects.get_or_create(
+            mes_año=mes_año,
+            defaults={'creado_por': request.user}
+        )
+        
+        # Recalcular totales
+        resumen.calcular_totales()
+        
+        serializer = ResumenIngresosSerializer(resumen)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'])
+    def confirmar_ingreso(self, request):
+        """Confirmar un ingreso pendiente"""
+        ingreso_id = request.data.get('ingreso_id')
+        if not ingreso_id:
+            return Response(
+                {'error': 'Debe proporcionar ingreso_id'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            ingreso = Ingreso.objects.get(id=ingreso_id)
+            ingreso.estado = 'confirmado'
+            ingreso.save()
+            
+            # Actualizar resumen del mes
+            mes_año = ingreso.get_mes_año()
+            resumen, created = ResumenIngresos.objects.get_or_create(
+                mes_año=mes_año,
+                defaults={'creado_por': request.user}
+            )
+            resumen.calcular_totales()
+            
+            serializer = self.get_serializer(ingreso)
+            return Response(serializer.data)
+            
+        except Ingreso.DoesNotExist:
+            return Response(
+                {'error': 'Ingreso no encontrado'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=False, methods=['post'])
+    def cancelar_ingreso(self, request):
+        """Cancelar un ingreso"""
+        ingreso_id = request.data.get('ingreso_id')
+        motivo = request.data.get('motivo', '')
+        
+        if not ingreso_id:
+            return Response(
+                {'error': 'Debe proporcionar ingreso_id'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            ingreso = Ingreso.objects.get(id=ingreso_id)
+            ingreso.estado = 'cancelado'
+            if motivo:
+                ingreso.observaciones += f"\nCancelado: {motivo}"
+            ingreso.save()
+            
+            serializer = self.get_serializer(ingreso)
+            return Response(serializer.data)
+            
+        except Ingreso.DoesNotExist:
+            return Response(
+                {'error': 'Ingreso no encontrado'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+class ResumenIngresosViewSet(viewsets.ReadOnlyModelViewSet):
+    """Resúmenes de Ingresos - CU18"""
+    queryset = ResumenIngresos.objects.all()
+    serializer_class = ResumenIngresosSerializer
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['post'])
+    def generar_resumen(self, request):
+        """Generar resumen de ingresos para un mes específico"""
+        mes_año = request.data.get('mes_año')
+        if not mes_año:
+            return Response(
+                {'error': 'Debe proporcionar mes_año'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Crear o actualizar resumen
+        resumen, created = ResumenIngresos.objects.get_or_create(
+            mes_año=mes_año,
+            defaults={'creado_por': request.user}
+        )
+        
+        # Recalcular totales
+        resumen.calcular_totales()
+        
+        serializer = self.get_serializer(resumen)
         return Response(serializer.data)

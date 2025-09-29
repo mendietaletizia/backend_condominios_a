@@ -294,3 +294,192 @@ class ConfiguracionAcceso(models.Model):
 
     def __str__(self):
         return "Configuración del Sistema de Acceso"
+
+# CU23: Asignación de Tareas para Empleados - Modelos adicionales
+from django.conf import settings
+from django.core.validators import MinValueValidator, MaxValueValidator
+
+class TipoTarea(models.Model):
+    """Tipos de tareas que pueden asignarse a empleados - CU23"""
+    CATEGORIA_CHOICES = [
+        ('mantenimiento', 'Mantenimiento'),
+        ('limpieza', 'Limpieza'),
+        ('seguridad', 'Seguridad'),
+        ('administrativo', 'Administrativo'),
+        ('jardineria', 'Jardinería'),
+        ('piscina', 'Piscina'),
+        ('gimnasio', 'Gimnasio'),
+        ('salon_eventos', 'Salón de Eventos'),
+        ('otro', 'Otro')
+    ]
+    
+    PRIORIDAD_CHOICES = [
+        ('baja', 'Baja'),
+        ('media', 'Media'),
+        ('alta', 'Alta'),
+        ('urgente', 'Urgente')
+    ]
+    
+    id = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=100)
+    categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
+    descripcion = models.TextField(blank=True)
+    prioridad_default = models.CharField(max_length=10, choices=PRIORIDAD_CHOICES, default='media')
+    duracion_estimada_horas = models.IntegerField(default=1, help_text="Duración estimada en horas")
+    requiere_especialista = models.BooleanField(default=False)
+    requiere_herramientas = models.BooleanField(default=False)
+    materiales_necesarios = models.TextField(blank=True)
+    instrucciones = models.TextField(blank=True)
+    activo = models.BooleanField(default=True)
+    
+    class Meta:
+        verbose_name = "Tipo de Tarea"
+        verbose_name_plural = "Tipos de Tareas"
+        ordering = ['categoria', 'nombre']
+    
+    def __str__(self):
+        return f"{self.nombre} ({self.get_categoria_display()})"
+
+class TareaEmpleado(models.Model):
+    """Tareas asignadas a empleados - CU23"""
+    ESTADO_CHOICES = [
+        ('asignada', 'Asignada'),
+        ('en_progreso', 'En Progreso'),
+        ('completada', 'Completada'),
+        ('cancelada', 'Cancelada'),
+        ('pausada', 'Pausada'),
+        ('rechazada', 'Rechazada')
+    ]
+    
+    id = models.AutoField(primary_key=True)
+    titulo = models.CharField(max_length=200)
+    descripcion = models.TextField()
+    tipo_tarea = models.ForeignKey(TipoTarea, on_delete=models.CASCADE)
+    empleado_asignado = models.ForeignKey(Empleado, on_delete=models.CASCADE, related_name='tareas_asignadas')
+    supervisor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='tareas_supervisadas')
+    
+    # Fechas y tiempos
+    fecha_asignacion = models.DateTimeField(auto_now_add=True)
+    fecha_limite = models.DateTimeField()
+    fecha_inicio = models.DateTimeField(null=True, blank=True)
+    fecha_completado = models.DateTimeField(null=True, blank=True)
+    
+    # Estado y prioridad
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='asignada')
+    prioridad = models.CharField(max_length=10, choices=TipoTarea.PRIORIDAD_CHOICES, default='media')
+    
+    # Recursos y materiales
+    materiales_proporcionados = models.TextField(blank=True)
+    herramientas_necesarias = models.TextField(blank=True)
+    costo_estimado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    costo_real = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # Seguimiento
+    horas_trabajadas = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    progreso_porcentaje = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    observaciones_empleado = models.TextField(blank=True)
+    observaciones_supervisor = models.TextField(blank=True)
+    
+    # Archivos adjuntos
+    foto_antes = models.ImageField(upload_to='tareas/fotos/', blank=True, null=True)
+    foto_despues = models.ImageField(upload_to='tareas/fotos/', blank=True, null=True)
+    documento_adjunto = models.FileField(upload_to='tareas/documentos/', blank=True, null=True)
+    
+    # Metadatos
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Tarea de Empleado"
+        verbose_name_plural = "Tareas de Empleados"
+        ordering = ['-fecha_asignacion']
+    
+    def __str__(self):
+        return f"{self.titulo} - {self.empleado_asignado.persona_relacionada.nombre}"
+    
+    def calcular_progreso(self):
+        """Calcula el progreso basado en el estado"""
+        if self.estado == 'completada':
+            return 100
+        elif self.estado == 'en_progreso':
+            return self.progreso_porcentaje
+        elif self.estado == 'asignada':
+            return 0
+        return self.progreso_porcentaje
+    
+    def esta_vencida(self):
+        """Verifica si la tarea está vencida"""
+        return self.estado not in ['completada', 'cancelada'] and timezone.now() > self.fecha_limite
+    
+    def tiempo_restante(self):
+        """Calcula el tiempo restante para completar la tarea"""
+        if self.estado in ['completada', 'cancelada']:
+            return None
+        
+        ahora = timezone.now()
+        if ahora > self.fecha_limite:
+            return "Vencida"
+        
+        tiempo_restante = self.fecha_limite - ahora
+        dias = tiempo_restante.days
+        horas = tiempo_restante.seconds // 3600
+        
+        if dias > 0:
+            return f"{dias} días, {horas} horas"
+        else:
+            return f"{horas} horas"
+
+class ComentarioTarea(models.Model):
+    """Comentarios en tareas de empleados - CU23"""
+    id = models.AutoField(primary_key=True)
+    tarea = models.ForeignKey(TareaEmpleado, on_delete=models.CASCADE, related_name='comentarios')
+    autor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    comentario = models.TextField()
+    fecha_comentario = models.DateTimeField(auto_now_add=True)
+    es_interno = models.BooleanField(default=False, help_text="Si es True, solo lo ve el supervisor")
+    
+    class Meta:
+        verbose_name = "Comentario de Tarea"
+        verbose_name_plural = "Comentarios de Tareas"
+        ordering = ['-fecha_comentario']
+    
+    def __str__(self):
+        return f"Comentario de {self.autor.username} en {self.tarea.titulo}"
+
+class EvaluacionTarea(models.Model):
+    """Evaluación de tareas completadas - CU23"""
+    CALIFICACION_CHOICES = [
+        (1, 'Muy Malo'),
+        (2, 'Malo'),
+        (3, 'Regular'),
+        (4, 'Bueno'),
+        (5, 'Excelente')
+    ]
+    
+    id = models.AutoField(primary_key=True)
+    tarea = models.OneToOneField(TareaEmpleado, on_delete=models.CASCADE, related_name='evaluacion')
+    evaluador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    
+    # Calificaciones
+    calidad_trabajo = models.IntegerField(choices=CALIFICACION_CHOICES)
+    cumplimiento_tiempo = models.IntegerField(choices=CALIFICACION_CHOICES)
+    uso_recursos = models.IntegerField(choices=CALIFICACION_CHOICES)
+    comunicacion = models.IntegerField(choices=CALIFICACION_CHOICES)
+    
+    # Comentarios
+    comentarios_positivos = models.TextField(blank=True)
+    areas_mejora = models.TextField(blank=True)
+    recomendaciones = models.TextField(blank=True)
+    
+    # Metadatos
+    fecha_evaluacion = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "Evaluación de Tarea"
+        verbose_name_plural = "Evaluaciones de Tareas"
+    
+    def __str__(self):
+        return f"Evaluación de {self.tarea.titulo}"
+    
+    def calificacion_promedio(self):
+        """Calcula la calificación promedio"""
+        return (self.calidad_trabajo + self.cumplimiento_tiempo + self.uso_recursos + self.comunicacion) / 4
