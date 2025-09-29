@@ -152,7 +152,7 @@ class Visita(models.Model):
     nombre = models.CharField(max_length=100)
     ci = models.CharField(max_length=20)
     vehiculo = models.CharField(max_length=10, null=True, blank=True)
-    fecha_inicio = models.DateTimeField()
+    fecha_inicio = models.DateTimeField(null=True, blank=True)
     fecha_salida = models.DateTimeField(null=True, blank=True)
     residente = models.ForeignKey(Residentes, on_delete=models.CASCADE)
 
@@ -163,7 +163,7 @@ class Invitado(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=100)
     ci = models.CharField(max_length=20)
-    residente = models.ForeignKey(Residentes, on_delete=models.CASCADE, related_name='invitados')
+    residente = models.ForeignKey(Residentes, on_delete=models.CASCADE, related_name='invitados', null=True, blank=True)
     TIPO_INVITADO_CHOICES = [
         ('casual', 'Visita Casual'),
         ('evento', 'Invitado Evento'),
@@ -179,8 +179,8 @@ class Invitado(models.Model):
     check_in_by = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='invitados_checkin')
     check_out_at = models.DateTimeField(null=True, blank=True)
     check_out_by = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='invitados_checkout')
-    creado_en = models.DateTimeField(auto_now_add=True)
-    actualizado_en = models.DateTimeField(auto_now=True)
+    creado_en = models.DateTimeField(default=timezone.now)
+    actualizado_en = models.DateTimeField(default=timezone.now)
 
     def __str__(self):
         return f"Invitado: {self.nombre} ({self.get_tipo_display()})"

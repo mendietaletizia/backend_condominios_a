@@ -251,12 +251,21 @@ class InvitadoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invitado
         fields = '__all__'
+        extra_kwargs = {
+            # Residente se asigna automáticamente desde el usuario autenticado si no se envía
+            'residente': {'required': False, 'allow_null': True},
+        }
 
     def get_residente_info(self, obj):
-        return {
-            'id': obj.residente.id,
-            'nombre': obj.residente.persona.nombre,
-        }
+        try:
+            if obj.residente:
+                return {
+                    'id': obj.residente.id,
+                    'nombre': obj.residente.persona.nombre if getattr(obj.residente, 'persona', None) else None,
+                }
+        except Exception:
+            return None
+        return None
 
     def validate(self, attrs):
         tipo = attrs.get('tipo') or (self.instance.tipo if self.instance else 'casual')
