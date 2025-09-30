@@ -1,0 +1,23 @@
+# Configuración de Django para desarrollo local
+SECRET_KEY=django-insecure-dev-key-change-in-production-123456789
+DEBUG=True
+
+# Configuración de Base de Datos para desarrollo local
+# PostgreSQL configurado por defecto
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/condominio_db
+
+# Si tienes credenciales diferentes, ajusta aquí:
+# DATABASE_URL=postgresql://tu_usuario:tu_password@localhost:5432/condominio_db
+
+# Configuración de email (opcional para desarrollo)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=
+EMAIL_HOST_PASSWORD=
+
+# Configuración de Redis (opcional para desarrollo)
+REDIS_URL=redis://127.0.0.1:6379/1
+
+# Configuración de seguridad (solo para producción)
+SECURE_SSL_REDIRECT=False

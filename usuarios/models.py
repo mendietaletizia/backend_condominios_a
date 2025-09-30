@@ -171,7 +171,7 @@ class Invitado(models.Model):
     tipo = models.CharField(max_length=10, choices=TIPO_INVITADO_CHOICES, default='casual')
     evento = models.ForeignKey('comunidad.Evento', on_delete=models.CASCADE, null=True, blank=True)
     vehiculo_placa = models.CharField(max_length=10, null=True, blank=True)
-    fecha_inicio = models.DateTimeField()
+    fecha_inicio = models.DateTimeField(default=timezone.now)
     fecha_fin = models.DateTimeField(null=True, blank=True)
     activo = models.BooleanField(default=True)
     # Control de acceso humano (portería)
