@@ -190,7 +190,7 @@ WSGI_APPLICATION = 'backend_condominio_a.wsgi.application'
 if dj_database_url:
     DATABASES = {
         'default': dj_database_url.config(
-            default=config('DATABASE_URL', default='postgresql://postgres:postgres@localhost:5432/condominio_db')
+            default=config('DATABASE_URL', default='postgresql://postgres:postgres@localhost:5432/oficial')
         )
     }
 else:
@@ -198,7 +198,7 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('DB_NAME', default='condominio_db'),
+            'NAME': config('DB_NAME', default='oficial'),
             'USER': config('DB_USER', default='postgres'),
             'PASSWORD': config('DB_PASSWORD', default='postgres'),
             'HOST': config('DB_HOST', default='localhost'),

@@ -186,6 +186,25 @@ class ResidentesUnidadSerializer(serializers.ModelSerializer):
         # id_unidad
         if 'id_unidad' in self.initial_data:
             attrs['id_unidad'] = self._resolve_fk(Unidad, self.initial_data.get('id_unidad'), 'id_unidad')
+        
+        # Validaciones adicionales
+        if 'id_residente' in attrs and 'id_unidad' in attrs:
+            # Verificar que no exista ya una relación activa
+            existing = ResidentesUnidad.objects.filter(
+                id_residente=attrs['id_residente'],
+                id_unidad=attrs['id_unidad'],
+                estado=True
+            ).exclude(id=self.instance.id if self.instance else None)
+            
+            if existing.exists():
+                raise serializers.ValidationError(
+                    "Ya existe una relación activa entre este residente y esta unidad"
+                )
+            
+            # Verificar que la unidad esté activa
+            if not attrs['id_unidad'].activa:
+                raise serializers.ValidationError("La unidad debe estar activa")
+        
         return super().validate(attrs)
 
     def create(self, validated_data):

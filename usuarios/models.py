@@ -64,29 +64,29 @@ class Residentes(models.Model):
             ).first()
             
             if not existing_relation:
-                # Buscar una unidad disponible (por ahora, la primera activa)
-                # En el futuro, esto podría ser más específico
-                unidad_disponible = Unidad.objects.filter(activa=True).first()
+                # Buscar una unidad disponible que NO tenga propietario
+                unidad_disponible = Unidad.objects.filter(
+                    activa=True
+                ).exclude(
+                    residentesunidad__estado=True,
+                    residentesunidad__rol_en_unidad='propietario'
+                ).first()
                 
                 if unidad_disponible:
-                    # Verificar si la unidad ya tiene un propietario
-                    propietario_existente = ResidentesUnidad.objects.filter(
+                    # Crear la relación como propietario
+                    ResidentesUnidad.objects.create(
+                        id_residente=self,
                         id_unidad=unidad_disponible,
-                        estado=True,
-                        rol_en_unidad='propietario'
-                    ).first()
-                    
-                    if not propietario_existente:
-                        ResidentesUnidad.objects.create(
-                            id_residente=self,
-                            id_unidad=unidad_disponible,
-                            rol_en_unidad='propietario',
-                            fecha_inicio=timezone.now().date(),
-                            estado=True
-                        )
+                        rol_en_unidad='propietario',
+                        fecha_inicio=timezone.now().date(),
+                        estado=True
+                    )
+                    print(f"✅ Relación propietario creada: {self.persona.nombre} -> {unidad_disponible.numero_casa}")
+                else:
+                    print(f"⚠️ No hay unidades disponibles para asignar como propietario a {self.persona.nombre}")
         except Exception as e:
             # Log the error but don't break the save
-            print(f"Error creando relación propietario: {e}")
+            print(f"❌ Error creando relación propietario: {e}")
     
     def asociar_usuario(self, usuario):
         """Método para asociar un usuario y crear automáticamente la relación como propietario"""
