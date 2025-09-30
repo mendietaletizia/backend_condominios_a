@@ -78,46 +78,49 @@ class ResidentesViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Validaciones adicionales al crear un residente"""
         # Validar que la persona asociada existe
-        persona_id = serializer.validated_data.get('persona')
-        if not persona_id:
+        persona = serializer.validated_data.get('persona')
+        if not persona:
             raise serializers.ValidationError("Debe especificar una persona asociada")
-        
+
         # Validar que no se duplique el usuario si se especifica
-        usuario_id = serializer.validated_data.get('usuario')
-        usuario_asociado_id = serializer.validated_data.get('usuario_asociado')
-        
-        if usuario_id and usuario_asociado_id:
+        usuario = serializer.validated_data.get('usuario')
+        usuario_asociado = serializer.validated_data.get('usuario_asociado')
+
+        if usuario and usuario_asociado:
             raise serializers.ValidationError("Un residente no puede tener usuario propio y usuario asociado al mismo tiempo")
-        
+
         # Si se está asociando un usuario_asociado, usar el método especial
-        if usuario_asociado_id:
+        if usuario_asociado:
             residente = serializer.save()
-            from usuarios.models import Usuario
-            usuario = Usuario.objects.get(id=usuario_asociado_id)
-            residente.asociar_usuario(usuario)
+            try:
+                # usuario_asociado viene como instancia (PrimaryKeyRelatedField)
+                residente.asociar_usuario(usuario_asociado)
+            except Exception as e:
+                raise serializers.ValidationError(f"Error al asociar usuario: {str(e)}")
         else:
             serializer.save()
     
     def perform_update(self, serializer):
         """Validaciones adicionales al actualizar un residente"""
         # Validar que la persona asociada existe
-        persona_id = serializer.validated_data.get('persona')
-        if not persona_id:
+        persona = serializer.validated_data.get('persona')
+        if not persona:
             raise serializers.ValidationError("Debe especificar una persona asociada")
-        
+
         # Validar que no se duplique el usuario si se especifica
-        usuario_id = serializer.validated_data.get('usuario')
-        usuario_asociado_id = serializer.validated_data.get('usuario_asociado')
-        
-        if usuario_id and usuario_asociado_id:
+        usuario = serializer.validated_data.get('usuario')
+        usuario_asociado = serializer.validated_data.get('usuario_asociado')
+
+        if usuario and usuario_asociado:
             raise serializers.ValidationError("Un residente no puede tener usuario propio y usuario asociado al mismo tiempo")
-        
+
         # Si se está asociando un usuario_asociado, usar el método especial
         instance = serializer.instance
-        if usuario_asociado_id and not instance.usuario_asociado:
-            from usuarios.models import Usuario
-            usuario = Usuario.objects.get(id=usuario_asociado_id)
-            instance.asociar_usuario(usuario)
+        if usuario_asociado and not instance.usuario_asociado:
+            try:
+                instance.asociar_usuario(usuario_asociado)
+            except Exception as e:
+                raise serializers.ValidationError(f"Error al asociar usuario: {str(e)}")
         else:
             serializer.save()
     

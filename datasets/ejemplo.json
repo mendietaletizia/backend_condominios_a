@@ -1,0 +1,9 @@
+{
+  "title": "Dataset de ejemplo",
+  "version": 1,
+  "items": [
+    {"id": 1, "name": "A", "value": 10},
+    {"id": 2, "name": "B", "value": 20}
+  ]
+}
+

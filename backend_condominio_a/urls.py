@@ -17,6 +17,8 @@ Including another URLconf
 from django.contrib import admin
 
 from django.urls import path, include
+from backend_condominio_a.views_datasets import DatasetView
+from backend_condominio_a.views_ia import AnalyzeImageView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -27,4 +29,6 @@ urlpatterns = [
     path('api/', include('economia.urls')),       # CU8, CU9, CU19, CU20
     path('api/', include('mantenimiento.urls')), # CU10
     path('api/', include('usuarios.urls_acceso')), # CU14 - Gestión de Accesos
+    path('api/datasets/<str:name>/', DatasetView.as_view(), name='datasets'),
+    path('api/ia/analyze/', AnalyzeImageView.as_view(), name='ia-analyze'),
 ]
