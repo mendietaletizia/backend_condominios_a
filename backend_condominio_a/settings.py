@@ -139,7 +139,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'whitenoise',
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
@@ -261,11 +260,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = '/static/'
+from pathlib import Path
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Configuración de archivos estáticos optimizada
-if not DEBUG:
-    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
+# Django 5: usa STORAGES (no definas STATICFILES_STORAGE en otra parte)
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    }
+}
+
 # Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
