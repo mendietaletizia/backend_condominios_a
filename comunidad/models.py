@@ -50,6 +50,7 @@ class ResidentesUnidad(models.Model):
     class Meta:
         unique_together = ['id_residente', 'id_unidad', 'fecha_inicio']
 
+
 # CU11: Eventos
 class Evento(models.Model):
     id = models.AutoField(primary_key=True)
@@ -103,6 +104,23 @@ class NotificacionResidente(models.Model):
         unique_together = ['notificacion', 'residente']
         verbose_name = 'Notificación por Residente'
         verbose_name_plural = 'Notificaciones por Residente'
+
+class LecturaComunicado(models.Model):
+    """Modelo para registrar lecturas de comunicados por cualquier tipo de usuario"""
+    id = models.AutoField(primary_key=True)
+    notificacion = models.ForeignKey(Notificacion, on_delete=models.CASCADE)
+    usuario = models.ForeignKey('usuarios.Usuario', on_delete=models.CASCADE)
+    rol = models.CharField(max_length=50, help_text="Rol del usuario al momento de la lectura")
+    fecha_lectura = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['notificacion', 'usuario']
+        verbose_name = 'Lectura de Comunicado'
+        verbose_name_plural = 'Lecturas de Comunicados'
+        ordering = ['-fecha_lectura']
+    
+    def __str__(self):
+        return f"{self.usuario.username} ({self.rol}) - {self.notificacion.titulo}"
 
 # CU17: Actas / Asambleas
 class Acta(models.Model):
@@ -165,3 +183,34 @@ class Mascota(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.tipo}) - {self.residente.persona.nombre}"
+
+# CU10: Reservas
+class Reserva(models.Model):
+    ESTADO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('confirmada', 'Confirmada'),
+        ('cancelada', 'Cancelada'),
+        ('completada', 'Completada'),
+    ]
+    
+    id = models.AutoField(primary_key=True)
+    fecha = models.DateField()
+    hora_inicio = models.TimeField()
+    hora_fin = models.TimeField()
+    residente = models.ForeignKey(Residentes, on_delete=models.CASCADE, related_name='reservas_comunidad')
+    area = models.ForeignKey(AreaComun, on_delete=models.CASCADE, related_name='reservas_comunidad')
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
+    motivo = models.TextField(null=True, blank=True)
+    costo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    pagado = models.BooleanField(default=False)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['area', 'fecha', 'hora_inicio']
+        verbose_name = 'Reserva'
+        verbose_name_plural = 'Reservas'
+        ordering = ['-fecha', '-hora_inicio']
+
+    def __str__(self):
+        return f"Reserva {self.id} - {self.area.nombre} ({self.fecha})"

@@ -7,9 +7,51 @@ class AreaComunSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class ReservaSerializer(serializers.ModelSerializer):
+    residente_nombre = serializers.SerializerMethodField()
+    area_nombre = serializers.SerializerMethodField()
+    area_tipo = serializers.SerializerMethodField()
+    
     class Meta:
         model = Reserva
         fields = '__all__'
+        extra_kwargs = {
+            'residente': {'required': False},  # No requerido en creación
+        }
+    
+    def get_residente_nombre(self, obj):
+        # Verificar si obj es un diccionario (durante creación) o un objeto modelo
+        if isinstance(obj, dict):
+            residente_id = obj.get('residente')
+            if residente_id:
+                return f"Residente #{residente_id}"
+            return "Residente no asignado"
+        
+        # Si es un objeto modelo
+        if obj.residente and obj.residente.persona:
+            return f"{obj.residente.persona.nombre} {obj.residente.persona.apellido}"
+        return f"Residente #{obj.residente_id}"
+    
+    def get_area_nombre(self, obj):
+        # Verificar si obj es un diccionario (durante creación) o un objeto modelo
+        if isinstance(obj, dict):
+            area_id = obj.get('area')
+            return f"Área #{area_id}" if area_id else "Área no especificada"
+        
+        # Si es un objeto modelo
+        return obj.area.nombre if obj.area else f"Área #{obj.area_id}"
+    
+    def get_area_tipo(self, obj):
+        # Verificar si obj es un diccionario (durante creación) o un objeto modelo
+        if isinstance(obj, dict):
+            return ""  # Durante creación no tenemos acceso al tipo
+        
+        # Si es un objeto modelo
+        return obj.area.tipo if obj.area else ""
+    
+    def create(self, validated_data):
+        # El campo residente se asigna automáticamente en el ViewSet
+        # No necesitamos incluirlo en el JSON del frontend
+        return super().create(validated_data)
 
 class MantenimientoSerializer(serializers.ModelSerializer):
     class Meta:

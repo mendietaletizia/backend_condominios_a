@@ -54,12 +54,13 @@ class ReservaViewSet(viewsets.ModelViewSet):
     permission_classes = [RolPermiso]
 
     def get_queryset(self):
-        # Residente solo ve sus reservas, admin ve todas
+        # Residente solo ve sus reservas, admin ve solo reservas confirmadas
         if not self.request.user or not self.request.user.is_authenticated:
             return Reserva.objects.none()
         empleado = Empleado.objects.filter(usuario=self.request.user).first()
         if empleado and empleado.cargo.lower() == "administrador":
-            return Reserva.objects.all()
+            # Los administradores solo ven reservas confirmadas (no pendientes)
+            return Reserva.objects.filter(estado='confirmada')
         # Para residentes, necesitamos encontrar su relación con las reservas
         from usuarios.models import Residentes
         residente = Residentes.objects.filter(usuario=self.request.user).first()
@@ -105,6 +106,13 @@ class ReservaViewSet(viewsets.ModelViewSet):
     def confirmar(self, request, pk=None):
         """Confirmar una reserva y generar un evento en la agenda (CU11)."""
         reserva = self.get_object()
+        
+        # Solo permitir confirmar reservas pendientes
+        if reserva.estado != 'pendiente':
+            return Response({
+                'error': f'No se puede confirmar una reserva en estado "{reserva.estado}". Solo se pueden confirmar reservas pendientes.'
+            }, status=400)
+        
         reserva.estado = 'confirmada'
         reserva.save()
 
@@ -120,15 +128,30 @@ class ReservaViewSet(viewsets.ModelViewSet):
         descripcion = f"Evento por reserva del área {reserva.area.nombre} de {reserva.hora_inicio} a {reserva.hora_fin}. Residente ID: {reserva.residente_id}."
         Evento.objects.create(titulo=titulo, descripcion=descripcion, fecha=fecha_evento, estado=True)
 
-        return Response({'detail': 'Reserva confirmada y evento creado'}, status=200)
+        return Response({
+            'detail': 'Reserva confirmada y evento creado',
+            'reserva_id': reserva.id,
+            'estado': reserva.estado
+        }, status=200)
 
     @action(detail=True, methods=['post'])
     def cancelar(self, request, pk=None):
         """Cancelar una reserva (y no crear evento)."""
         reserva = self.get_object()
+        
+        # Solo permitir cancelar reservas pendientes
+        if reserva.estado != 'pendiente':
+            return Response({
+                'error': f'No se puede cancelar una reserva en estado "{reserva.estado}". Solo se pueden cancelar reservas pendientes.'
+            }, status=400)
+        
         reserva.estado = 'cancelada'
         reserva.save()
-        return Response({'detail': 'Reserva cancelada'}, status=200)
+        return Response({
+            'detail': 'Reserva cancelada',
+            'reserva_id': reserva.id,
+            'estado': reserva.estado
+        }, status=200)
 
 # Vistas para los nuevos modelos
 class MantenimientoViewSet(viewsets.ModelViewSet):

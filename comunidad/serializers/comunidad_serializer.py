@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta, Mascota, Reglamento
+from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, LecturaComunicado, Acta, Mascota, Reglamento, Reserva
 from mantenimiento.models import AreaComun
 from usuarios.models import Residentes, Usuario, PlacaVehiculo
 
@@ -348,6 +348,16 @@ class NotificacionResidenteSerializer(serializers.ModelSerializer):
         model = NotificacionResidente
         fields = '__all__'
 
+class LecturaComunicadoSerializer(serializers.ModelSerializer):
+    usuario_nombre = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = LecturaComunicado
+        fields = '__all__'
+    
+    def get_usuario_nombre(self, obj):
+        return obj.usuario.username if obj.usuario else 'Usuario desconocido'
+
 class ActaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Acta
@@ -385,3 +395,70 @@ class ReglamentoSerializer(serializers.ModelSerializer):
         model = Reglamento
         fields = '__all__'
         read_only_fields = ['fecha_creacion', 'fecha_modificacion']
+
+class ReservaSerializer(serializers.ModelSerializer):
+    nombre_area = serializers.SerializerMethodField()
+    tipo_area = serializers.SerializerMethodField()
+    nombre_completo_residente = serializers.SerializerMethodField()
+    area_nombre = serializers.SerializerMethodField()
+    residente_nombre = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Reserva
+        fields = '__all__'
+        read_only_fields = ['fecha_creacion', 'fecha_actualizacion', 'residente']
+    
+    def validate(self, data):
+        # Verificar si ya existe una reserva con la misma área, fecha y hora
+        area = data.get('area')
+        fecha = data.get('fecha')
+        hora_inicio = data.get('hora_inicio')
+        
+        if area and fecha and hora_inicio:
+            existing = Reserva.objects.filter(
+                area=area,
+                fecha=fecha,
+                hora_inicio=hora_inicio,
+                estado__in=['pendiente', 'confirmada']
+            )
+            
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            
+            if existing.exists():
+                raise serializers.ValidationError(
+                    "Ya existe una reserva para esta área en la misma fecha y hora. Por favor, elige otro horario."
+                )
+        
+        return data
+    
+    def get_nombre_area(self, obj):
+        if hasattr(obj, 'area') and obj.area:
+            return obj.area.nombre
+        return 'Sin área'
+    
+    def get_tipo_area(self, obj):
+        if hasattr(obj, 'area') and obj.area:
+            return obj.area.tipo
+        return 'Sin tipo'
+    
+    def get_nombre_completo_residente(self, obj):
+        if hasattr(obj, 'residente') and obj.residente:
+            if hasattr(obj.residente, 'persona') and obj.residente.persona:
+                return obj.residente.persona.nombre
+            elif hasattr(obj.residente, 'usuario_asociado') and obj.residente.usuario_asociado:
+                return obj.residente.usuario_asociado.username
+        return 'Sin nombre'
+    
+    def get_area_nombre(self, obj):
+        if hasattr(obj, 'area') and obj.area:
+            return obj.area.nombre
+        return 'Sin área'
+    
+    def get_residente_nombre(self, obj):
+        if hasattr(obj, 'residente') and obj.residente:
+            if hasattr(obj.residente, 'persona') and obj.residente.persona:
+                return obj.residente.persona.nombre
+            elif hasattr(obj.residente, 'usuario_asociado') and obj.residente.usuario_asociado:
+                return obj.residente.usuario_asociado.username
+        return 'Sin nombre'

@@ -5,11 +5,12 @@ from django.utils import timezone
 from rest_framework import viewsets, permissions, serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, Acta, Mascota, Reglamento
+from comunidad.models import Unidad, ResidentesUnidad, Evento, Notificacion, NotificacionResidente, LecturaComunicado, Acta, Mascota, Reglamento, Reserva
 from comunidad.serializers.comunidad_serializer import (
     UnidadSerializer, ResidentesUnidadSerializer,
     EventoSerializer, NotificacionSerializer,
-    NotificacionResidenteSerializer, ActaSerializer, MascotaSerializer, ReglamentoSerializer
+    NotificacionResidenteSerializer, LecturaComunicadoSerializer, ActaSerializer, MascotaSerializer, ReglamentoSerializer,
+    ReservaSerializer
 )
 from usuarios.models import Empleado
 from django.db.models import Q
@@ -22,6 +23,54 @@ class RolPermiso(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
+        # Verificar si el usuario tiene rol de administrador
+        if hasattr(request.user, 'rol') and request.user.rol:
+            if request.user.rol.nombre.lower() == "administrador":
+                return True
+        
+        # Verificar si es empleado con cargo administrador (lógica de respaldo)
+        empleado = Empleado.objects.filter(usuario=request.user).first()
+        if empleado and empleado.cargo.lower() == "administrador":
+            return True
+        
+        # Para vistas que solo consultan, permitimos GET
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return False
+
+class ReservaPermiso(permissions.BasePermission):
+    """Permisos específicos para reservas - residentes pueden crear, admin puede todo"""
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Administradores pueden hacer todo
+        if hasattr(request.user, 'rol') and request.user.rol:
+            if request.user.rol.nombre.lower() == "administrador":
+                return True
+        
+        empleado = Empleado.objects.filter(usuario=request.user).first()
+        if empleado and empleado.cargo.lower() == "administrador":
+            return True
+        
+        # Para reservas, permitir GET y POST a todos los usuarios autenticados
+        if request.method in ['GET', 'POST']:
+            return True
+        
+        # Para PUT/DELETE, solo administradores
+        return False
+
+class NotificacionPermiso(permissions.BasePermission):
+    """Permisos específicos para notificaciones"""
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Para acciones específicas como confirmar_lectura, permitir a todos los usuarios autenticados
+        if hasattr(view, 'action') and view.action in ['confirmar_lectura', 'lecturas_confirmadas']:
+            return True
+        
+        # Para operaciones CRUD normales, usar la lógica de RolPermiso
         # Verificar si el usuario tiene rol de administrador
         if hasattr(request.user, 'rol') and request.user.rol:
             if request.user.rol.nombre.lower() == "administrador":
@@ -229,7 +278,7 @@ class EventoViewSet(viewsets.ModelViewSet):
 class NotificacionViewSet(viewsets.ModelViewSet):
     queryset = Notificacion.objects.all()
     serializer_class = NotificacionSerializer
-    permission_classes = [RolPermiso]
+    permission_classes = [NotificacionPermiso]
 
     from rest_framework.decorators import action
     from rest_framework.response import Response
@@ -291,6 +340,60 @@ class NotificacionViewSet(viewsets.ModelViewSet):
             created = len(bulk)
 
         return Response({'detail': 'Comunicado enviado', 'notificacion_id': notif.id, 'asignados': created}, status=201)
+
+    @action(detail=True, methods=['post'])
+    def confirmar_lectura(self, request, pk=None):
+        """Confirmar que un usuario ha leído un comunicado"""
+        notificacion = self.get_object()
+        usuario = request.user
+        
+        if not usuario or not usuario.is_authenticated:
+            return Response({'error': 'Usuario no autenticado'}, status=401)
+        
+        # Obtener el rol del usuario
+        rol = 'usuario'  # Por defecto
+        if hasattr(usuario, 'rol') and usuario.rol:
+            rol = usuario.rol.nombre.lower()
+        else:
+            # Verificar si es empleado
+            empleado = Empleado.objects.filter(usuario=usuario).first()
+            if empleado:
+                rol = empleado.cargo.lower()
+            else:
+                # Verificar si es residente
+                from usuarios.models import Residentes
+                residente = Residentes.objects.filter(usuario_asociado=usuario).first()
+                if residente:
+                    rol = 'residente'
+        
+        # Crear o actualizar el registro de lectura
+        lectura, created = LecturaComunicado.objects.get_or_create(
+            notificacion=notificacion,
+            usuario=usuario,
+            defaults={'rol': rol}
+        )
+        
+        if not created:
+            # Si ya existe, actualizar la fecha de lectura
+            lectura.fecha_lectura = timezone.now()
+            lectura.rol = rol  # Actualizar rol por si cambió
+            lectura.save()
+        
+        return Response({
+            'detail': 'Lectura confirmada',
+            'usuario': usuario.username,
+            'rol': rol,
+            'fecha_lectura': lectura.fecha_lectura,
+            'created': created
+        }, status=200)
+
+    @action(detail=True, methods=['get'])
+    def lecturas_confirmadas(self, request, pk=None):
+        """Obtener lista de usuarios que han leído este comunicado"""
+        notificacion = self.get_object()
+        lecturas = LecturaComunicado.objects.filter(notificacion=notificacion)
+        serializer = LecturaComunicadoSerializer(lecturas, many=True)
+        return Response(serializer.data)
 
 class NotificacionResidenteViewSet(viewsets.ModelViewSet):
     queryset = NotificacionResidente.objects.all()
@@ -382,3 +485,134 @@ class ReglamentoViewSet(viewsets.ModelViewSet):
         reglamentos = self.get_queryset().filter(activo=True)
         serializer = self.get_serializer(reglamentos, many=True)
         return Response(serializer.data)
+
+# CU10: Reservas
+class ReservaViewSet(viewsets.ModelViewSet):
+    queryset = Reserva.objects.all()
+    serializer_class = ReservaSerializer
+    permission_classes = [ReservaPermiso]
+
+    def get_queryset(self):
+        # Residente solo ve sus reservas, admin ve todas
+        if not self.request.user or not self.request.user.is_authenticated:
+            return Reserva.objects.none()
+        
+        # Administradores pueden ver todas las reservas
+        if self.request.user.is_superuser or (hasattr(self.request.user, 'rol') and self.request.user.rol and self.request.user.rol.nombre.lower() == 'administrador'):
+            return Reserva.objects.all()
+        
+        empleado = Empleado.objects.filter(usuario=self.request.user).first()
+        if empleado and empleado.cargo.lower() == "administrador":
+            return Reserva.objects.all()
+        
+        # Residentes solo ven sus propias reservas
+        from usuarios.models import Residentes
+        try:
+            residente = Residentes.objects.get(usuario_asociado=self.request.user)
+            return Reserva.objects.filter(residente=residente)
+        except Residentes.DoesNotExist:
+            # Si no es residente, devolver todas las reservas (para debug)
+            return Reserva.objects.all()
+    
+    def perform_create(self, serializer):
+        # Asignar automáticamente el residente al crear la reserva
+        from usuarios.models import Residentes
+        residente = Residentes.objects.filter(usuario_asociado=self.request.user).first()
+        if residente:
+            serializer.save(residente=residente)
+    
+    @action(detail=False, methods=['get'])
+    def disponibilidad(self, request):
+        """Verificar disponibilidad de un área en una fecha y hora específica"""
+        area_id = request.query_params.get('area_id')
+        fecha = request.query_params.get('fecha')
+        hora_inicio = request.query_params.get('hora_inicio')
+        hora_fin = request.query_params.get('hora_fin')
+        
+        if not all([area_id, fecha, hora_inicio, hora_fin]):
+            return Response({'error': 'Faltan parámetros requeridos'}, status=400)
+        
+        # Verificar si hay conflictos de horario
+        reservas_conflicto = Reserva.objects.filter(
+            area_id=area_id,
+            fecha=fecha,
+            estado__in=['pendiente', 'confirmada']
+        ).filter(
+            Q(hora_inicio__lt=hora_fin, hora_fin__gt=hora_inicio)
+        )
+        
+        disponible = not reservas_conflicto.exists()
+        
+        return Response({
+            'disponible': disponible,
+            'conflictos': reservas_conflicto.count()
+        })
+
+    @action(detail=True, methods=['post'])
+    def confirmar(self, request, pk=None):
+        """Confirmar una reserva y generar un evento en la agenda (CU11)."""
+        reserva = self.get_object()
+        
+        # Solo permitir confirmar reservas pendientes
+        if reserva.estado != 'pendiente':
+            return Response({
+                'error': f'No se puede confirmar una reserva en estado "{reserva.estado}". Solo se pueden confirmar reservas pendientes.'
+            }, status=400)
+        
+        reserva.estado = 'confirmada'
+        reserva.save()
+
+        # Crear evento asociado (sin FK directa, guardamos datos descriptivos)
+        try:
+            from datetime import datetime
+            from django.utils import timezone
+            fecha_evento = datetime.combine(reserva.fecha, reserva.hora_inicio)
+            if timezone.is_naive(fecha_evento):
+                fecha_evento = timezone.make_aware(fecha_evento)
+        except Exception:
+            fecha_evento = timezone.now()
+
+        titulo = f"Reserva confirmada - {reserva.area.nombre}"
+        residente_nombre = getattr(getattr(reserva.residente, 'persona', None), 'nombre', None) or getattr(getattr(reserva.residente, 'usuario_asociado', None), 'username', 'Residente')
+        residente_ci = getattr(getattr(reserva.residente, 'persona', None), 'ci', None)
+        if residente_ci:
+            descripcion = (
+                f"Evento por reserva del área {reserva.area.nombre} de {reserva.hora_inicio} a {reserva.hora_fin} "
+                f"por {residente_nombre} (CI: {residente_ci}). Residente ID: {reserva.residente_id}. Reserva ID: {reserva.id}."
+            )
+        else:
+            descripcion = (
+                f"Evento por reserva del área {reserva.area.nombre} de {reserva.hora_inicio} a {reserva.hora_fin} "
+                f"por {residente_nombre}. Residente ID: {reserva.residente_id}. Reserva ID: {reserva.id}."
+            )
+        evento = Evento.objects.create(titulo=titulo, descripcion=descripcion, fecha=fecha_evento, estado=True)
+        # Asociar el área al evento para que aparezca en areas_info del serializer
+        try:
+            evento.areas.add(reserva.area)
+        except Exception:
+            pass
+
+        return Response({
+            'detail': 'Reserva confirmada y evento creado',
+            'reserva_id': reserva.id,
+            'estado': reserva.estado
+        }, status=200)
+
+    @action(detail=True, methods=['post'])
+    def cancelar(self, request, pk=None):
+        """Cancelar una reserva (y no crear evento)."""
+        reserva = self.get_object()
+        
+        # Solo permitir cancelar reservas pendientes
+        if reserva.estado != 'pendiente':
+            return Response({
+                'error': f'No se puede cancelar una reserva en estado "{reserva.estado}". Solo se pueden cancelar reservas pendientes.'
+            }, status=400)
+        
+        reserva.estado = 'cancelada'
+        reserva.save()
+        return Response({
+            'detail': 'Reserva cancelada',
+            'reserva_id': reserva.id,
+            'estado': reserva.estado
+        }, status=200)
