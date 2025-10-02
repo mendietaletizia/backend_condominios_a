@@ -28,6 +28,7 @@ class Reserva(models.Model):
     motivo = models.TextField(null=True, blank=True)
     costo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     pagado = models.BooleanField(default=False)
+    vista_por_admin = models.BooleanField(default=False)  # Para notificaciones
     
     class Meta:
         unique_together = ['area', 'fecha', 'hora_inicio']

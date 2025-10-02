@@ -27,7 +27,7 @@ urlpatterns = [
     path('api/', include('comunidad.urls')),     # CU6, CU11, CU12, CU17
     path('api/', include('finanzas.urls')),       # CU18
     path('api/', include('economia.urls')),       # CU8, CU9, CU19, CU20
-    path('api/', include('mantenimiento.urls')), # CU10
+    path('api/mantenimiento/', include('mantenimiento.urls')), # CU10
     path('api/', include('usuarios.urls_acceso')), # CU14 - Gestión de Accesos
     path('api/datasets/<str:name>/', DatasetView.as_view(), name='datasets'),
     path('api/ia/analyze/', AnalyzeImageView.as_view(), name='ia-analyze'),

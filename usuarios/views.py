@@ -264,7 +264,8 @@ class InvitadoViewSet(viewsets.ModelViewSet):
                     is_admin = True
 
         if not is_admin:
-            residente = Residentes.objects.filter(usuario=user).first()
+            # Soportar usuarios residentes asociados por 'usuario' o 'usuario_asociado'
+            residente = Residentes.objects.filter(Q(usuario=user) | Q(usuario_asociado=user)).first()
             if residente:
                 qs = qs.filter(residente=residente)
             else:
@@ -293,7 +294,7 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         # Asegurar residente por usuario autenticado si no viene en payload
         residente = None
         try:
-            residente = Residentes.objects.filter(usuario=self.request.user).first()
+            residente = Residentes.objects.filter(Q(usuario=self.request.user) | Q(usuario_asociado=self.request.user)).first()
         except Exception:
             pass
         if residente and not serializer.validated_data.get('residente'):

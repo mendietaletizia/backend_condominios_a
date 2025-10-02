@@ -41,11 +41,19 @@
 - **Endpoints**: `GET/POST/PUT/DELETE /api/economia/multas/`
 
 #### **CU10: Gestión y reserva de áreas comunes (app: mantenimiento)**
-- Consultar disponibilidad, reservar áreas comunes
+- Consultar disponibilidad, reservar áreas comunes (sistema básico)
 - **Endpoints**: 
   - `GET/POST/PUT/DELETE /api/mantenimiento/areas-comunes/`
   - `GET/POST/PUT/DELETE /api/mantenimiento/reservas/`
   - `GET /api/mantenimiento/reservas/disponibilidad/` - Verificar disponibilidad
+
+#### **CU10b: Sistema de reservas avanzado (app: comunidad)**
+- Sistema completo de reservas con notificaciones y gestión administrativa
+- **Endpoints**: 
+  - `GET/POST/PUT/DELETE /api/reservas/`
+  - `GET /api/reservas/disponibilidad/` - Verificar disponibilidad
+  - `GET /api/reservas/nuevas_count/` - Contar reservas no vistas
+  - `POST /api/reservas/marcar_vistas/` - Marcar reservas como vistas
 
 #### **CU11: Agenda de eventos (app: comunidad)**
 - Publicar o consultar eventos comunitarios

@@ -522,6 +522,48 @@ class ReservaViewSet(viewsets.ModelViewSet):
             serializer.save(residente=residente)
     
     @action(detail=False, methods=['get'])
+    def nuevas_count(self, request):
+        """Contar reservas no vistas por admin para notificaciones"""
+        if not self.request.user or not self.request.user.is_authenticated:
+            return Response({'error': 'No autorizado'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Solo admins pueden ver este endpoint
+        is_admin = False
+        if self.request.user.is_superuser or (hasattr(self.request.user, 'rol') and self.request.user.rol and self.request.user.rol.nombre.lower() == 'administrador'):
+            is_admin = True
+        else:
+            empleado = Empleado.objects.filter(usuario=self.request.user).first()
+            if empleado and empleado.cargo.lower() == "administrador":
+                is_admin = True
+        
+        if not is_admin:
+            return Response({'error': 'Solo administradores'}, status=status.HTTP_403_FORBIDDEN)
+        
+        count = Reserva.objects.filter(vista_por_admin=False).count()
+        return Response({'nuevas_reservas': count})
+    
+    @action(detail=False, methods=['post'])
+    def marcar_vistas(self, request):
+        """Marcar todas las reservas como vistas por admin"""
+        if not self.request.user or not self.request.user.is_authenticated:
+            return Response({'error': 'No autorizado'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Solo admins pueden usar este endpoint
+        is_admin = False
+        if self.request.user.is_superuser or (hasattr(self.request.user, 'rol') and self.request.user.rol and self.request.user.rol.nombre.lower() == 'administrador'):
+            is_admin = True
+        else:
+            empleado = Empleado.objects.filter(usuario=self.request.user).first()
+            if empleado and empleado.cargo.lower() == "administrador":
+                is_admin = True
+        
+        if not is_admin:
+            return Response({'error': 'Solo administradores'}, status=status.HTTP_403_FORBIDDEN)
+        
+        updated = Reserva.objects.filter(vista_por_admin=False).update(vista_por_admin=True)
+        return Response({'marcadas': updated})
+
+    @action(detail=False, methods=['get'])
     def disponibilidad(self, request):
         """Verificar disponibilidad de un área en una fecha y hora específica"""
         area_id = request.query_params.get('area_id')

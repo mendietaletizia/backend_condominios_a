@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from usuarios.models import Persona, Residentes
 from mantenimiento.models import AreaComun
 
@@ -203,6 +205,7 @@ class Reserva(models.Model):
     motivo = models.TextField(null=True, blank=True)
     costo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     pagado = models.BooleanField(default=False)
+    vista_por_admin = models.BooleanField(default=False)  # Para notificaciones
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)
     
@@ -214,3 +217,12 @@ class Reserva(models.Model):
 
     def __str__(self):
         return f"Reserva {self.id} - {self.area.nombre} ({self.fecha})"
+
+
+# Signal para marcar nuevas reservas como no vistas por admin
+@receiver(post_save, sender=Reserva)
+def marcar_reserva_no_vista(sender, instance, created, **kwargs):
+    """Cuando se crea una nueva reserva, marcarla como no vista por admin"""
+    if created:
+        # La nueva reserva ya tiene vista_por_admin=False por defecto
+        pass
