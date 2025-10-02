@@ -260,7 +260,7 @@ class InvitadoViewSet(viewsets.ModelViewSet):
                 is_admin = True
             else:
                 empleado = Empleado.objects.filter(usuario=user).first()
-                if empleado and empleado.cargo.lower() == 'administrador':
+                if empleado and empleado.cargo.lower() in ['administrador', 'seguridad', 'portero']:
                     is_admin = True
 
         if not is_admin:
@@ -304,13 +304,8 @@ class InvitadoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def activos(self, request):
-        """Listar invitados activos (fecha_fin nula o futura y activo=True)"""
-        ahora = timezone.now()
-        qs = self.get_queryset().filter(
-            activo=True
-        ).filter(
-            Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=ahora)
-        )
+        """Listar invitados activos"""
+        qs = self.get_queryset().filter(activo=True)
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
 
@@ -386,18 +381,9 @@ class InvitadoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='seguridad/hoy')
     def seguridad_hoy(self, request):
-        """Invitados activos del día para seguridad. Admin y empleados de seguridad ven todos; residentes ven propios."""
-        ahora = timezone.now()
-        inicio = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
-        fin = ahora.replace(hour=23, minute=59, second=59, microsecond=999999)
-
+        """Invitados activos para seguridad. Admin y empleados de seguridad ven todos; residentes ven propios."""
         user = request.user
-        qs = Invitado.objects.filter(
-            activo=True,
-            fecha_inicio__lte=fin
-        ).filter(
-            Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=inicio)
-        )
+        qs = Invitado.objects.filter(activo=True)
 
         is_admin = False
         if user and user.is_authenticated:
@@ -415,24 +401,15 @@ class InvitadoViewSet(viewsets.ModelViewSet):
             else:
                 qs = Invitado.objects.none()
 
-        serializer = self.get_serializer(qs.order_by('fecha_inicio'), many=True)
+        serializer = self.get_serializer(qs.order_by('creado_en'), many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], url_path='seguridad/resumen')
     def seguridad_resumen(self, request):
-        """Resumen del día para portería: totales y por tipo."""
-        ahora = timezone.now()
-        inicio = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
-        fin = ahora.replace(hour=23, minute=59, second=59, microsecond=999999)
-
+        """Resumen para portería: totales y por tipo."""
         # Base queryset similar a seguridad_hoy
         user = request.user
-        qs = Invitado.objects.filter(
-            activo=True,
-            fecha_inicio__lte=fin
-        ).filter(
-            Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=inicio)
-        )
+        qs = Invitado.objects.filter(activo=True)
 
         is_admin = False
         if user and user.is_authenticated:
@@ -454,8 +431,8 @@ class InvitadoViewSet(viewsets.ModelViewSet):
         total_evento = qs.filter(tipo='evento').count()
         total_casual = qs.filter(tipo='casual').count()
 
-        # Próximos 10 ingresos ordenados
-        proximos = qs.order_by('fecha_inicio')[:10]
+        # Últimos 10 invitados registrados
+        proximos = qs.order_by('-creado_en')[:10]
         data_proximos = [
             {
                 'id': inv.id,
@@ -472,14 +449,11 @@ class InvitadoViewSet(viewsets.ModelViewSet):
                     'id': inv.evento.id,
                     'titulo': getattr(inv.evento, 'titulo', None)
                 } if inv.evento else None,
-                'fecha_inicio': inv.fecha_inicio,
-                'fecha_fin': inv.fecha_fin,
             }
             for inv in proximos
         ]
 
         return Response({
-            'fecha': ahora.date(),
             'totales': {
                 'total': total,
                 'evento': total_evento,

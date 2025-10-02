@@ -26,6 +26,8 @@ urlpatterns = [
     path('registros-acceso/limpiar-antiguos/', RegistroAccesoViewSet.as_view({'delete': 'limpiar_registros_antiguos'}), name='limpiar-registros-antiguos'),
     path('registros-acceso/placas-registradas/', RegistroAccesoViewSet.as_view({'get': 'placas_registradas'}), name='placas-registradas'),
     path('registros-acceso/crear-placa-prueba/', RegistroAccesoViewSet.as_view({'post': 'crear_placa_prueba'}), name='crear-placa-prueba'),
+    path('registros-acceso/lista-placas-autorizadas/', RegistroAccesoViewSet.as_view({'get': 'lista_placas_autorizadas'}), name='lista-placas-autorizadas'),
+    path('registros-acceso/placas-activas-debug/', RegistroAccesoViewSet.as_view({'get': 'placas_activas_debug'}), name='placas-activas-debug'),
     path('placas-invitado/activas/', PlacaInvitadoViewSet.as_view({'get': 'activas'}), name='placas-invitado-activas'),
     path('configuracion/probar-conexion/', ConfiguracionAccesoViewSet.as_view({'post': 'probar_conexion'}), name='probar-conexion'),
 ]

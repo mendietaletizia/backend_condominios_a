@@ -270,14 +270,9 @@ class InvitadoSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         tipo = attrs.get('tipo') or (self.instance.tipo if self.instance else 'casual')
         evento = attrs.get('evento') if 'evento' in attrs else (self.instance.evento if self.instance else None)
-        fecha_inicio = attrs.get('fecha_inicio') if 'fecha_inicio' in attrs else (self.instance.fecha_inicio if self.instance else None)
-        fecha_fin = attrs.get('fecha_fin') if 'fecha_fin' in attrs else (self.instance.fecha_fin if self.instance else None)
 
         if tipo == 'evento' and not evento:
             raise serializers.ValidationError('Invitado de tipo evento requiere campo evento')
-
-        if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
-            raise serializers.ValidationError('fecha_fin no puede ser anterior a fecha_inicio')
 
         return attrs
 

@@ -251,7 +251,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Internationalization
 LANGUAGE_CODE = 'es-es'
-TIME_ZONE = 'America/Asuncion'
+TIME_ZONE = 'America/La_Paz'  # Zona horaria de Bolivia (UTC-4)
 USE_I18N = True
 USE_TZ = True
 

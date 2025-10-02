@@ -159,103 +159,9 @@ class RegistroAccesoViewSet(ModelViewSet):
     serializer_class = RegistroAccesoSerializer
     permission_classes = [permissions.IsAuthenticated]
     
-    def obtener_placas_activas(self):
-        """
-        Obtiene todas las placas activas del sistema unificando todas las fuentes
-        Retorna un diccionario con todas las placas activas organizadas por tipo
-        """
-        placas_activas = {}
-        
-        # 1. Placas de vehículos de residentes (PlacaVehiculo)
-        placas_residentes = PlacaVehiculo.objects.filter(activo=True).select_related('residente__persona')
-        print(f"📋 Cargando placas de residentes: {placas_residentes.count()} encontradas")
-        
-        for placa in placas_residentes:
-            placa_upper = placa.placa.upper()
-            placas_activas[placa_upper] = {
-                'tipo': 'residente',
-                'objeto': placa,
-                'placa': placa_upper,
-                'propietario_nombre': placa.residente.persona.nombre,
-                'vehiculo_info': f"{placa.marca} {placa.modelo} ({placa.color})",
-                'unidad': placa.residente.residentesunidad_set.filter(estado=True).first(),
-                'fecha_registro': placa.fecha_registro,
-                'mensaje_ia': f"🤖 IA VERIFICA: ✅ VEHÍCULO DE RESIDENTE REGISTRADO - {placa.residente.persona.nombre}",
-                'confianza_busqueda': 100
-            }
-            print(f"  ✅ Placa residente agregada: {placa_upper} - {placa.residente.persona.nombre}")
-        
-        # 2. Placas de invitados activos y no vencidos (PlacaInvitado)
-        placas_invitados = PlacaInvitado.objects.filter(
-            activo=True,
-            fecha_vencimiento__gte=timezone.now()
-        ).select_related('residente__persona')
-        print(f"📋 Cargando placas de invitados: {placas_invitados.count()} encontradas")
-        
-        for placa in placas_invitados:
-            placa_upper = placa.placa.upper()
-            placas_activas[placa_upper] = {
-                'tipo': 'invitado',
-                'objeto': placa,
-                'placa': placa_upper,
-                'visitante_nombre': placa.nombre_visitante,
-                'propietario_nombre': placa.residente.persona.nombre,
-                'vehiculo_info': f"{placa.marca or 'N/A'} {placa.modelo or 'N/A'} ({placa.color or 'N/A'})",
-                'fecha_vencimiento': placa.fecha_vencimiento,
-                'ci_visitante': placa.ci_visitante,
-                'mensaje_ia': f"🤖 IA VERIFICA: ✅ VEHÍCULO DE INVITADO REGISTRADO - {placa.nombre_visitante}",
-                'confianza_busqueda': 100
-            }
-            print(f"  ✅ Placa invitado agregada: {placa_upper} - {placa.nombre_visitante}")
-        
-        # 3. Vehículos del sistema original (Vehiculo) - Solo si existen y no están duplicados
-        try:
-            vehiculos_originales = Vehiculo.objects.all()
-            for vehiculo in vehiculos_originales:
-                placa_upper = vehiculo.placa.upper()
-                if placa_upper not in placas_activas:  # Evitar duplicados
-                    placas_activas[placa_upper] = {
-                        'tipo': 'vehiculo_original',
-                        'objeto': vehiculo,
-                        'placa': placa_upper,
-                        'vehiculo_info': f"{vehiculo.marca} {vehiculo.modelo} ({vehiculo.color})",
-                        'propietario_nombre': 'Sistema Original',
-                        'mensaje_ia': f"🤖 IA VERIFICA: ✅ VEHÍCULO REGISTRADO EN SISTEMA ORIGINAL - {vehiculo.marca} {vehiculo.modelo}",
-                        'confianza_busqueda': 95
-                    }
-        except Exception as e:
-            print(f"⚠️ Error al cargar vehículos originales: {e}")
-        
-        # 4. Invitados con vehículos del sistema original (Invitado)
-        invitados_con_vehiculo = Invitado.objects.filter(
-            activo=True,
-            vehiculo_placa__isnull=False
-        ).exclude(vehiculo_placa='').select_related('residente__persona')
-        
-        for invitado in invitados_con_vehiculo:
-            # Verificar si no está vencido
-            if invitado.fecha_fin and invitado.fecha_fin < timezone.now():
-                continue
-                
-            placa_upper = invitado.vehiculo_placa.upper()
-            if placa_upper not in placas_activas:  # Evitar duplicados
-                placas_activas[placa_upper] = {
-                    'tipo': 'invitado_original',
-                    'objeto': invitado,
-                    'placa': placa_upper,
-                    'visitante_nombre': invitado.nombre,
-                    'propietario_nombre': invitado.residente.persona.nombre if invitado.residente else 'Sin residente',
-                    'fecha_fin': invitado.fecha_fin,
-                    'vehiculo_info': f"Vehículo de {invitado.nombre}",
-                    'mensaje_ia': f"🤖 IA VERIFICA: ✅ INVITADO REGISTRADO EN SISTEMA ORIGINAL - {invitado.nombre}",
-                    'confianza_busqueda': 90
-                }
-        
-        return placas_activas
-
     def buscar_placa_inteligente(self, placa_detectada):
         """
-        Búsqueda inteligente de placas usando el sistema unificado de placas activas
+        Búsqueda inteligente de placas con múltiples estrategias
         Retorna un diccionario con la información encontrada
         """
         resultado = {
@@ -272,47 +178,151 @@ class RegistroAccesoViewSet(ModelViewSet):
             
         placa_limpia = placa_detectada.upper().strip()
         
-        print(f"🔍 Buscando placa: '{placa_limpia}'")
+        # Estrategia 1: Búsqueda exacta en PlacaVehiculo (residentes)
+        placa_vehiculo = PlacaVehiculo.objects.filter(
+            placa__iexact=placa_limpia,
+            activo=True
+        ).first()
         
-        # Obtener todas las placas activas del sistema
-        placas_activas = self.obtener_placas_activas()
-        
-        print(f"📋 Total de placas activas en el sistema: {len(placas_activas)}")
-        print(f"📋 Placas disponibles: {list(placas_activas.keys())[:10]}...")  # Mostrar primeras 10
-        
-        # Búsqueda exacta
-        if placa_limpia in placas_activas:
-            placa_info = placas_activas[placa_limpia]
+        if placa_vehiculo:
             resultado.update({
                 'encontrada': True,
-                'tipo': placa_info['tipo'],
-                'objeto': placa_info['objeto'],
-                'info_detallada': {k: v for k, v in placa_info.items() if k not in ['tipo', 'objeto', 'mensaje_ia', 'confianza_busqueda']},
-                'mensaje_ia': placa_info['mensaje_ia'],
-                'confianza_busqueda': placa_info['confianza_busqueda']
+                'tipo': 'residente',
+                'objeto': placa_vehiculo,
+                'info_detallada': {
+                    'propietario_nombre': placa_vehiculo.residente.persona.nombre,
+                    'vehiculo_info': f"{placa_vehiculo.marca} {placa_vehiculo.modelo} ({placa_vehiculo.color})",
+                    'unidad': placa_vehiculo.residente.residentesunidad_set.filter(estado=True).first(),
+                    'fecha_registro': placa_vehiculo.fecha_registro
+                },
+                'mensaje_ia': f"🤖 IA VERIFICA: ✅ VEHÍCULO DE RESIDENTE REGISTRADO - {placa_vehiculo.residente.persona.nombre}",
+                'confianza_busqueda': 100
             })
-            print(f"✅ PLACA ENCONTRADA: {placa_limpia} - Tipo: {placa_info['tipo']}")
             return resultado
         
-        # Búsqueda aproximada (por si hay diferencias menores)
-        for placa_registrada, info in placas_activas.items():
-            # Comparar sin espacios y caracteres especiales
-            placa_reg_clean = ''.join(c for c in placa_registrada if c.isalnum())
-            placa_det_clean = ''.join(c for c in placa_limpia if c.isalnum())
-            
-            if placa_reg_clean == placa_det_clean:
-                resultado.update({
-                    'encontrada': True,
-                    'tipo': info['tipo'],
-                    'objeto': info['objeto'],
-                    'info_detallada': {k: v for k, v in info.items() if k not in ['tipo', 'objeto', 'mensaje_ia', 'confianza_busqueda']},
-                    'mensaje_ia': info['mensaje_ia'],
-                    'confianza_busqueda': info['confianza_busqueda'] - 5  # Reducir confianza por búsqueda aproximada
-                })
-                print(f"✅ PLACA ENCONTRADA (aproximada): {placa_limpia} -> {placa_registrada}")
-                return resultado
+        # Estrategia 2: Búsqueda exacta en PlacaInvitado (invitados activos)
+        placa_invitado = PlacaInvitado.objects.filter(
+            placa__iexact=placa_limpia,
+            activo=True,
+            fecha_vencimiento__gte=timezone.now()
+        ).first()
         
-        print(f"❌ PLACA NO ENCONTRADA: '{placa_limpia}'")
+        if placa_invitado:
+            resultado.update({
+                'encontrada': True,
+                'tipo': 'invitado',
+                'objeto': placa_invitado,
+                'info_detallada': {
+                    'visitante_nombre': placa_invitado.nombre_visitante,
+                    'propietario_nombre': placa_invitado.residente.persona.nombre,
+                    'vehiculo_info': f"{placa_invitado.marca or 'N/A'} {placa_invitado.modelo or 'N/A'} ({placa_invitado.color or 'N/A'})",
+                    'fecha_vencimiento': placa_invitado.fecha_vencimiento,
+                    'ci_visitante': placa_invitado.ci_visitante
+                },
+                'mensaje_ia': f"🤖 IA VERIFICA: ✅ VEHÍCULO DE INVITADO REGISTRADO - {placa_invitado.nombre_visitante}",
+                'confianza_busqueda': 100
+            })
+            return resultado
+        
+        # Estrategia 3: Búsqueda en sistema original de Vehiculos
+        vehiculo_original = Vehiculo.objects.filter(placa__iexact=placa_limpia).first()
+        if vehiculo_original:
+            resultado.update({
+                'encontrada': True,
+                'tipo': 'vehiculo_original',
+                'objeto': vehiculo_original,
+                'info_detallada': {
+                    'vehiculo_info': f"{vehiculo_original.marca} {vehiculo_original.modelo} ({vehiculo_original.color})",
+                },
+                'mensaje_ia': f"🤖 IA VERIFICA: ✅ VEHÍCULO REGISTRADO EN SISTEMA ORIGINAL - {vehiculo_original.marca} {vehiculo_original.modelo}",
+                'confianza_busqueda': 95
+            })
+            return resultado
+        
+        # Estrategia 4: Búsqueda en sistema original de Invitados
+        invitado_original = Invitado.objects.filter(
+            vehiculo_placa__iexact=placa_limpia,
+            activo=True,
+            fecha_fin__gte=timezone.now()
+        ).first()
+        
+        if invitado_original:
+            resultado.update({
+                'encontrada': True,
+                'tipo': 'invitado_original',
+                'objeto': invitado_original,
+                'info_detallada': {
+                    'visitante_nombre': invitado_original.nombre,
+                    'propietario_nombre': invitado_original.residente.persona.nombre if invitado_original.residente else 'Sin residente',
+                    'fecha_fin': invitado_original.fecha_fin
+                },
+                'mensaje_ia': f"🤖 IA VERIFICA: ✅ INVITADO REGISTRADO EN SISTEMA ORIGINAL - {invitado_original.nombre}",
+                'confianza_busqueda': 90
+            })
+            return resultado
+        
+        # Estrategia 5: Búsqueda parcial/fuzzy (sin espacios, guiones, etc.)
+        variaciones_placa = [
+            placa_limpia.replace(' ', ''),
+            placa_limpia.replace('-', ''),
+            placa_limpia.replace('.', ''),
+            placa_limpia.replace(' ', '').replace('-', '').replace('.', '')
+        ]
+        
+        for variacion in variaciones_placa:
+            if variacion != placa_limpia and len(variacion) >= 4:
+                # Buscar en residentes con variación
+                placa_vehiculo_var = PlacaVehiculo.objects.filter(
+                    placa__icontains=variacion,
+                    activo=True
+                ).first()
+                
+                if placa_vehiculo_var:
+                    resultado.update({
+                        'encontrada': True,
+                        'tipo': 'residente',
+                        'objeto': placa_vehiculo_var,
+                        'info_detallada': {
+                            'propietario_nombre': placa_vehiculo_var.residente.persona.nombre,
+                            'vehiculo_info': f"{placa_vehiculo_var.marca} {placa_vehiculo_var.modelo} ({placa_vehiculo_var.color})",
+                            'placa_original': placa_vehiculo_var.placa,
+                            'placa_detectada': placa_detectada
+                        },
+                        'mensaje_ia': f"🤖 IA VERIFICA: ✅ VEHÍCULO DE RESIDENTE (coincidencia parcial) - {placa_vehiculo_var.residente.persona.nombre}",
+                        'confianza_busqueda': 85
+                    })
+                    return resultado
+                
+                # Buscar en invitados con variación
+                placa_invitado_var = PlacaInvitado.objects.filter(
+                    placa__icontains=variacion,
+                    activo=True,
+                    fecha_vencimiento__gte=timezone.now()
+                ).first()
+                
+                if placa_invitado_var:
+                    resultado.update({
+                        'encontrada': True,
+                        'tipo': 'invitado',
+                        'objeto': placa_invitado_var,
+                        'info_detallada': {
+                            'visitante_nombre': placa_invitado_var.nombre_visitante,
+                            'propietario_nombre': placa_invitado_var.residente.persona.nombre,
+                            'vehiculo_info': f"{placa_invitado_var.marca or 'N/A'} {placa_invitado_var.modelo or 'N/A'}",
+                            'placa_original': placa_invitado_var.placa,
+                            'placa_detectada': placa_detectada
+                        },
+                        'mensaje_ia': f"🤖 IA VERIFICA: ✅ VEHÍCULO DE INVITADO (coincidencia parcial) - {placa_invitado_var.nombre_visitante}",
+                        'confianza_busqueda': 80
+                    })
+                    return resultado
+        
+        # No se encontró nada
+        resultado.update({
+            'mensaje_ia': f"🤖 IA VERIFICA: ❌ PLACA '{placa_detectada}' NO REGISTRADA EN EL SISTEMA",
+            'confianza_busqueda': 0
+        })
+        
         return resultado
 
     def get_queryset(self):
@@ -952,144 +962,5 @@ class DashboardAccesoView(APIView):
         except Exception as e:
             return Response(
                 {'error': f'Error al crear placa de prueba: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    @action(detail=False, methods=['get'])
-    def placas_activas_debug(self, request):
-        """Endpoint para debugging - mostrar todas las placas activas del sistema"""
-        try:
-            placas_activas = self.obtener_placas_activas()
-            
-            # Organizar por tipo para mejor visualización
-            resultado = {
-                'total_placas': len(placas_activas),
-                'placas_por_tipo': {
-                    'residente': [],
-                    'invitado': [],
-                    'vehiculo_original': [],
-                    'invitado_original': []
-                },
-                'todas_las_placas': list(placas_activas.keys()),
-                'detalle_completo': placas_activas
-            }
-            
-            # Agrupar por tipo
-            for placa, info in placas_activas.items():
-                tipo = info['tipo']
-                resultado['placas_por_tipo'][tipo].append({
-                    'placa': placa,
-                    'propietario': info.get('propietario_nombre', 'N/A'),
-                    'visitante': info.get('visitante_nombre', None),
-                    'vehiculo': info.get('vehiculo_info', 'N/A')
-                })
-            
-            return Response(resultado)
-            
-        except Exception as e:
-            return Response(
-                {'error': f'Error al obtener placas activas: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    @action(detail=False, methods=['get'])
-    def lista_placas_autorizadas(self, request):
-        """Obtener lista unificada de todas las placas autorizadas para gestión de accesos"""
-        try:
-            placas_autorizadas = []
-            
-            # 1. Placas de vehículos de residentes
-            placas_residentes = PlacaVehiculo.objects.filter(activo=True).select_related('residente__persona')
-            for placa in placas_residentes:
-                placas_autorizadas.append({
-                    'id': f'residente_{placa.id}',
-                    'placa': placa.placa,
-                    'tipo': 'Residente',
-                    'marca': placa.marca,
-                    'modelo': placa.modelo,
-                    'color': placa.color,
-                    'propietario': placa.residente.persona.nombre,
-                    'visitante': None,
-                    'fecha_vencimiento': None,
-                    'fecha_registro': placa.fecha_registro.isoformat() if placa.fecha_registro else None,
-                    'estado': 'Activo'
-                })
-            
-            # 2. Placas de vehículos de invitados (solo activos y no vencidos)
-            placas_invitados = PlacaInvitado.objects.filter(
-                activo=True,
-                fecha_vencimiento__gte=timezone.now()
-            ).select_related('residente__persona')
-            
-            for placa in placas_invitados:
-                placas_autorizadas.append({
-                    'id': f'invitado_{placa.id}',
-                    'placa': placa.placa,
-                    'tipo': 'Invitado',
-                    'marca': placa.marca or 'N/A',
-                    'modelo': placa.modelo or 'N/A',
-                    'color': placa.color or 'N/A',
-                    'propietario': placa.residente.persona.nombre,
-                    'visitante': placa.nombre_visitante,
-                    'fecha_vencimiento': placa.fecha_vencimiento.isoformat() if placa.fecha_vencimiento else None,
-                    'fecha_registro': placa.fecha_registro.isoformat() if placa.fecha_registro else None,
-                    'estado': 'Activo'
-                })
-            
-            # 3. Vehículos del sistema original
-            vehiculos_originales = Vehiculo.objects.all()
-            for vehiculo in vehiculos_originales:
-                placas_autorizadas.append({
-                    'id': f'original_{vehiculo.placa}',
-                    'placa': vehiculo.placa,
-                    'tipo': 'Sistema Original',
-                    'marca': vehiculo.marca,
-                    'modelo': vehiculo.modelo,
-                    'color': vehiculo.color,
-                    'propietario': 'N/A',
-                    'visitante': None,
-                    'fecha_vencimiento': None,
-                    'fecha_registro': None,
-                    'estado': 'Activo'
-                })
-            
-            # 4. Invitados con vehículos del sistema original
-            invitados_con_vehiculo = Invitado.objects.filter(
-                activo=True,
-                vehiculo_placa__isnull=False
-            ).exclude(vehiculo_placa='').select_related('residente__persona')
-            
-            for invitado in invitados_con_vehiculo:
-                # Verificar si no está vencido
-                if invitado.fecha_fin and invitado.fecha_fin < timezone.now():
-                    continue
-                    
-                placas_autorizadas.append({
-                    'id': f'invitado_original_{invitado.id}',
-                    'placa': invitado.vehiculo_placa,
-                    'tipo': 'Invitado (Original)',
-                    'marca': 'N/A',
-                    'modelo': 'N/A',
-                    'color': 'N/A',
-                    'propietario': invitado.residente.persona.nombre if invitado.residente else 'N/A',
-                    'visitante': invitado.nombre,
-                    'fecha_vencimiento': invitado.fecha_fin.isoformat() if invitado.fecha_fin else None,
-                    'fecha_registro': invitado.fecha_inicio.isoformat() if invitado.fecha_inicio else None,
-                    'estado': 'Activo'
-                })
-            
-            return Response({
-                'placas_autorizadas': placas_autorizadas,
-                'total': len(placas_autorizadas),
-                'resumen': {
-                    'residentes': len([p for p in placas_autorizadas if p['tipo'] == 'Residente']),
-                    'invitados': len([p for p in placas_autorizadas if 'Invitado' in p['tipo']]),
-                    'sistema_original': len([p for p in placas_autorizadas if p['tipo'] == 'Sistema Original'])
-                }
-            })
-            
-        except Exception as e:
-            return Response(
-                {'error': f'Error al obtener lista de placas autorizadas: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
